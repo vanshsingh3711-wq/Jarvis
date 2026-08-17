@@ -1,5 +1,9 @@
 import time
 import json
+from dotenv import load_dotenv
+
+# Load environment variables before anything else
+load_dotenv()
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from routers import voice_rag

@@ -15,7 +15,7 @@ def process_and_ingest():
     # For a hackathon demo, we load a small slice of the validation set to keep ingestion fast
     dataset = load_dataset("ai4bharat/MSMARCO-XI", "default", split="validation[:1000]")
     
-    print(f"Loaded {len(dataset)} records. Applying multiple chunking strategies...")
+    print("Applying multiple chunking strategies...")
     
     # 1. Semantic Chunker (splits based on meaning shifts)
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
