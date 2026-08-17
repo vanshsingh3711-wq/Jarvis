@@ -112,7 +112,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
 const QuickAction = ({ icon, title, desc }: { icon: React.ReactNode, title: string, desc: string }) => (
   <button className="group flex items-start gap-4 p-4 rounded-[1.25rem] bg-white/[0.02] border border-white/[0.04] hover:bg-amber-500/[0.04] hover:border-amber-500/20 transition-all duration-300 text-left focus:outline-none focus:ring-1 focus:ring-amber-500/30 shadow-sm hover:shadow-md">
     <div className="p-2.5 rounded-2xl bg-white/[0.03] text-zinc-400 group-hover:text-amber-500 group-hover:bg-amber-500/10 group-hover:scale-110 transition-all duration-300">
-      {React.cloneElement(icon as React.ReactElement, { size: 20, strokeWidth: 1.5 })}
+      {React.cloneElement(icon as React.ReactElement<any>, { size: 20, strokeWidth: 1.5 })}
     </div>
     <div className="pt-0.5">
       <h3 className="text-[14px] font-medium text-zinc-300 group-hover:text-zinc-100 transition-colors tracking-wide">{title}</h3>
