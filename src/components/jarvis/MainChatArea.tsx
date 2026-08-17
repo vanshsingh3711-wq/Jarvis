@@ -3,6 +3,7 @@ import { Menu, ShoppingBag, Map, GraduationCap, Phone, Sparkles } from 'lucide-r
 import { ChatInput } from './ChatInput';
 import { ChatMessage, ChatMessageData } from './ChatMessage';
 import { ParticleOrb } from './ParticleOrb';
+import { UserButton } from '@clerk/nextjs';
 // import { mockMessages } from './MockData';
 
 // --- MOCK DATA (Remove this in your actual code) ---
@@ -50,6 +51,10 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
               <span className="text-[9px] uppercase tracking-widest text-amber-500/80 font-medium">Sync Active</span>
             </div>
           </div>
+        </div>
+        
+        <div className="flex items-center">
+          <UserButton appearance={{ elements: { userButtonAvatarBox: "w-8 h-8 rounded-full border border-white/10" } }} />
         </div>
       </header>
 
