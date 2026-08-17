@@ -1,36 +1,49 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# JARVIS — Voice-Enabled RAG Assistant
 
-## Getting Started
+> A voice-first AI assistant that listens, retrieves, reasons, and responds using grounded knowledge from a multilingual retrieval system.
 
-First, run the development server:
+JARVIS is a voice-enabled Retrieval-Augmented Generation (RAG) assistant built for the **HH Goa 2026 Shortlisting Task 2**.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+Instead of treating voice as a simple wrapper around a chatbot, JARVIS combines:
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+**Voice → Speech-to-Text → Intelligent Chunking → Vector Retrieval → Grounded Generation → Voice Response**
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The goal is to make interacting with AI feel natural while keeping responses fast, contextual, and grounded in retrieved information.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## ✨ What is JARVIS?
 
-To learn more about Next.js, take a look at the following resources:
+JARVIS is designed as a general-purpose AI assistant with a voice-first interface.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Users can simply speak a question and JARVIS handles the complete pipeline:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. 🎙️ Capture the user's voice
+2. 📝 Convert speech into text
+3. 🔎 Retrieve relevant information from the knowledge base
+4. 🧠 Generate an answer using retrieved context
+5. 🛡️ Validate that the response is grounded
+6. 🔊 Return the response to the user
 
-## Deploy on Vercel
+The interface is centered around a living particle orb that visually represents the assistant's state.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🚀 Core Features
+
+### 🎙️ Voice-First Interaction
+
+Users can communicate naturally through their microphone instead of typing.
+
+The assistant provides visual feedback for different stages:
+
+```text
+IDLE
+ ↓
+LISTENING
+ ↓
+PROCESSING
+ ↓
+RETRIEVING
+ ↓
+ANSWERING
