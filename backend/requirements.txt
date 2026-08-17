@@ -1,0 +1,20 @@
+fastapi
+uvicorn
+pydantic
+python-dotenv
+python-multipart
+
+# LangGraph and LLMs
+langchain
+langchain-openai
+langchain-community
+langchain-experimental
+langgraph
+elevenlabs
+
+# Advanced RAG Chunking & Retrieval
+chromadb
+rank_bm25
+datasets
+scikit-learn
+sentence-transformers
