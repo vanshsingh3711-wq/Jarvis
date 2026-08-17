@@ -1,27 +1,30 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Mic } from 'lucide-react';
+import { Mic, Paperclip, ArrowUp, Headphones } from 'lucide-react';
 
-export const ChatInput: React.FC = () => {
+interface ChatInputProps {
+  onVoiceClick?: () => void;
+}
+
+export const ChatInput: React.FC<ChatInputProps> = ({ onVoiceClick }) => {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isTyping = message.trim().length > 0;
 
   // Auto-resize textarea based on content
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 150)}px`;
     }
   }, [message]);
 
   const handleSubmit = () => {
     if (!message.trim()) return;
-    // Mock submission
     console.log('Submitted message:', message);
     setMessage('');
     
-    // Reset height
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
@@ -35,17 +38,20 @@ export const ChatInput: React.FC = () => {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-4 md:p-6 bg-zinc-950">
-      <div className="relative flex items-end gap-2 bg-zinc-900 border border-zinc-800 rounded-2xl p-2 focus-within:ring-1 focus-within:ring-zinc-700 focus-within:border-zinc-700 transition-all duration-200 shadow-sm">
+    <div className="w-full max-w-3xl mx-auto p-4 md:p-6 bg-transparent">
+      
+      {/* 
+        Main Input Container
+        Deeply rounded "Executive Pill" design with soft glassmorphism
+      */}
+      <div className="relative flex items-end gap-2 bg-black/40 backdrop-blur-2xl border border-white/[0.06] rounded-[2rem] p-2 pl-4 focus-within:bg-black/60 focus-within:border-amber-500/30 focus-within:ring-4 focus-within:ring-amber-500/10 transition-all duration-300 shadow-lg">
         
-        {/* Microphone Button (Voice Interface Placeholder) */}
+        {/* Attachment Button */}
         <button 
-          className="p-3 shrink-0 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors group relative focus:outline-none focus:ring-2 focus:ring-zinc-700"
-          title="Voice input"
+          className="p-3 shrink-0 rounded-full text-zinc-400 hover:text-zinc-100 hover:bg-white/10 transition-all duration-200 focus:outline-none mb-0.5"
+          title="Add context or files"
         >
-          <Mic size={20} />
-          {/* Subtle pulse ring for aesthetics on hover */}
-          <div className="absolute inset-0 rounded-xl border border-zinc-700/50 scale-110 opacity-0 group-hover:animate-ping duration-1000 hidden md:block"></div>
+          <Paperclip size={20} strokeWidth={1.5} />
         </button>
 
         {/* Textarea */}
@@ -54,24 +60,53 @@ export const ChatInput: React.FC = () => {
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Message JARVIS..."
-          className="flex-1 max-h-[200px] bg-transparent border-0 resize-none py-3 px-2 text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-0 custom-scrollbar leading-relaxed"
+          placeholder="Ask JARVIS to help with your day..."
+          className="flex-1 max-h-[150px] bg-transparent border-0 resize-none py-3.5 px-2 text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-0 custom-scrollbar text-[15px] leading-relaxed font-light"
           rows={1}
         />
 
-        {/* Send Button */}
-        <button
-          onClick={handleSubmit}
-          disabled={!message.trim()}
-          className="p-3 shrink-0 rounded-xl bg-zinc-100 text-zinc-950 disabled:opacity-50 disabled:bg-zinc-800 disabled:text-zinc-500 hover:bg-zinc-200 transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-700"
-          title="Send message (Enter)"
-        >
-          <Send size={20} className="ml-0.5" />
-        </button>
+        {/* Right Side Action Buttons */}
+        <div className="flex items-center gap-1 pr-1 mb-0.5">
+          
+          {/* 
+            Dictation / Voice Typing Button 
+          */}
+          <button 
+            onClick={() => console.log('Start dictation')}
+            className="p-3 shrink-0 rounded-full text-zinc-500 hover:text-zinc-200 hover:bg-white/10 transition-all duration-200 focus:outline-none"
+            title="Type with voice"
+          >
+            <Mic size={20} strokeWidth={1.5} />
+          </button>
+
+          {/* 
+            Voice Mode or Send Button
+            Swaps between Live Voice Mode and Send depending on if the user is typing
+          */}
+          {isTyping ? (
+            <button
+              onClick={handleSubmit}
+              className="p-2.5 shrink-0 rounded-full transition-all duration-300 focus:outline-none flex items-center justify-center bg-amber-500 text-black shadow-md hover:bg-amber-400 hover:scale-105 animate-in zoom-in duration-200"
+              title="Send request"
+            >
+              <ArrowUp size={22} strokeWidth={2.5} />
+            </button>
+          ) : (
+            <button 
+              onClick={onVoiceClick}
+              className="relative p-3 shrink-0 rounded-full transition-all duration-300 focus:outline-none group bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 shadow-[0_4px_20px_rgba(245,158,11,0.15)] animate-in zoom-in duration-200"
+              title="Start Voice Mode"
+            >
+              <Headphones size={20} strokeWidth={2} />
+            </button>
+          )}
+        </div>
       </div>
-      <div className="text-center mt-3">
-        <p className="text-xs text-zinc-500">
-          JARVIS can make mistakes. Consider verifying important information.
+      
+      {/* Clean, subtle disclaimer */}
+      <div className="text-center mt-4">
+        <p className="text-[11px] text-zinc-500 font-light tracking-wide">
+          JARVIS can make mistakes. Please verify important information.
         </p>
       </div>
     </div>

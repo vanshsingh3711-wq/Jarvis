@@ -1,100 +1,193 @@
-import React from 'react';
-import { Bot, MessageSquare, Search, Settings, User, Plus } from 'lucide-react';
-import { mockChatHistory, ChatSession } from './MockData';
+import React, { useState } from 'react';
+import { 
+  Search, Settings, Plus, MoreHorizontal, 
+  Sparkles, AlignLeft, Calendar, Briefcase
+} from 'lucide-react';
+// import { mockChatHistory, ChatSession } from './MockData';
+
+// --- MOCK DATA (Updated to reflect a General Life Assistant) ---
+interface ChatSession { id: string; title: string; date: string; icon: 'calendar' | 'briefcase' | 'sparkle'; }
+const mockChatHistory: ChatSession[] = [
+  { id: '1', title: 'Morning Briefing & Weather', date: 'today', icon: 'sparkle' },
+  { id: '2', title: 'Dark Room Storefront Metrics', date: 'today', icon: 'briefcase' },
+  { id: '3', title: 'Goa Trip Logistics & Itinerary', date: 'yesterday', icon: 'calendar' },
+];
+// ---------------------------------------------------
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
+  activeChatId?: string;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, activeChatId = '1' }) => {
   const todayChats = mockChatHistory.filter((chat) => chat.date === 'today');
   const yesterdayChats = mockChatHistory.filter((chat) => chat.date === 'yesterday');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+  // Helper to render soft icons based on chat type
+  const renderIcon = (type: string, isActive: boolean) => {
+    const colorClass = isActive ? 'text-amber-500' : 'text-zinc-500 group-hover:text-amber-400/70';
+    switch (type) {
+      case 'calendar': return <Calendar size={16} strokeWidth={1.5} className={`shrink-0 transition-colors ${colorClass}`} />;
+      case 'briefcase': return <Briefcase size={16} strokeWidth={1.5} className={`shrink-0 transition-colors ${colorClass}`} />;
+      default: return <AlignLeft size={16} strokeWidth={1.5} className={`shrink-0 transition-colors ${colorClass}`} />;
+    }
+  };
 
   return (
     <>
-      {/* Mobile Backdrop */}
-      {isOpen && (
-        <div 
-          className="fixed inset-0 z-40 bg-black/50 md:hidden" 
-          onClick={onClose}
-        />
-      )}
-
-      {/* Sidebar Container */}
+      {/* Mobile Backdrop with fade */}
       <div 
-        className={`fixed top-0 left-0 z-50 h-full w-72 bg-zinc-950 border-r border-zinc-800 flex flex-col transition-transform duration-300 ease-in-out md:translate-x-0 md:static ${
+        className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden transition-opacity duration-500 ${
+          isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={onClose}
+      />
+
+      {/* Sidebar Container - Executive Glassmorphism */}
+      <div 
+        className={`fixed top-0 left-0 z-50 h-full w-[280px] lg:w-[320px] bg-black/40 backdrop-blur-2xl border-r border-white/[0.04] flex flex-col transition-transform duration-500 cubic-bezier(0.16, 1, 0.3, 1) md:translate-x-0 md:static ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         {/* Header Area */}
-        <div className="p-4 flex flex-col gap-4">
-          <div className="flex items-center gap-3 px-2 py-2 text-zinc-100">
-            <div className="bg-zinc-100 text-zinc-950 p-1.5 rounded-lg">
-              <Bot size={24} strokeWidth={2.5} />
+        <div className="p-5 flex flex-col gap-6">
+          
+          {/* Logo & Assistant Identity */}
+          <div className="flex items-center gap-3 px-1">
+            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-amber-500/20 to-amber-900/20 border border-amber-500/20 shadow-[0_4px_20px_rgba(245,158,11,0.1)]">
+              <Sparkles size={20} className="text-amber-500" strokeWidth={1.5} />
             </div>
-            <span className="font-semibold text-lg tracking-wide">JARVIS</span>
+            <div className="flex flex-col">
+              <span className="font-medium text-lg tracking-widest text-zinc-100">
+                JARVIS
+              </span>
+              <span className="text-[10px] text-amber-500/80 uppercase tracking-widest font-medium">
+                Concierge Active
+              </span>
+            </div>
           </div>
 
-          <button className="flex items-center justify-center gap-2 w-full bg-zinc-100 text-zinc-950 hover:bg-zinc-200 transition-colors py-2.5 px-4 rounded-lg font-medium">
-            <Plus size={18} />
-            <span>New Chat</span>
+          {/* Executive New Request Button */}
+          <button className="group flex items-center justify-between w-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-all duration-300 py-3.5 px-5 rounded-[1.25rem] shadow-sm">
+            <span className="text-amber-500 text-[15px] font-medium tracking-wide">New Request</span>
+            <div className="p-1 rounded-full bg-amber-500/20 text-amber-500 group-hover:rotate-90 transition-transform duration-300">
+              <Plus size={16} strokeWidth={2.5} />
+            </div>
           </button>
 
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
+          {/* Seamless Search */}
+          <div className="relative group">
+            <Search 
+              className={`absolute left-4 top-1/2 -translate-y-1/2 transition-colors duration-300 ${
+                isSearchFocused ? 'text-amber-500' : 'text-zinc-500'
+              }`} 
+              size={16} 
+              strokeWidth={1.5}
+            />
             <input 
               type="text" 
-              placeholder="Search history..." 
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 pl-9 pr-4 text-sm text-zinc-300 focus:outline-none focus:border-zinc-700 transition-colors"
+              placeholder="Search past requests..." 
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setIsSearchFocused(false)}
+              className="w-full bg-white/[0.03] border border-white/[0.05] rounded-2xl py-3 pl-11 pr-4 text-[14px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500/30 focus:bg-white/[0.05] transition-all font-light"
             />
           </div>
         </div>
 
         {/* Chat History List */}
-        <div className="flex-1 overflow-y-auto px-4 py-2 custom-scrollbar">
-          <div className="mb-6">
-            <h3 className="text-xs font-semibold text-zinc-500 mb-2 px-2 uppercase tracking-wider">Today</h3>
-            <div className="flex flex-col gap-1">
-              {todayChats.map((chat) => (
-                <HistoryItem key={chat.id} chat={chat} />
-              ))}
+        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-8 scrollbar-hide">
+          {todayChats.length > 0 && (
+            <div>
+              <h3 className="text-[10px] font-medium text-zinc-500 mb-3 px-4 uppercase tracking-widest">
+                Today
+              </h3>
+              <div className="flex flex-col gap-1">
+                {todayChats.map((chat) => (
+                  <HistoryItem 
+                    key={chat.id} 
+                    chat={chat} 
+                    isActive={chat.id === activeChatId} 
+                    icon={renderIcon(chat.icon, chat.id === activeChatId)} 
+                  />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="mb-6">
-            <h3 className="text-xs font-semibold text-zinc-500 mb-2 px-2 uppercase tracking-wider">Yesterday</h3>
-            <div className="flex flex-col gap-1">
-              {yesterdayChats.map((chat) => (
-                <HistoryItem key={chat.id} chat={chat} />
-              ))}
+          {yesterdayChats.length > 0 && (
+            <div>
+              <h3 className="text-[10px] font-medium text-zinc-500 mb-3 px-4 uppercase tracking-widest">
+                Yesterday
+              </h3>
+              <div className="flex flex-col gap-1">
+                {yesterdayChats.map((chat) => (
+                  <HistoryItem 
+                    key={chat.id} 
+                    chat={chat} 
+                    isActive={chat.id === activeChatId}
+                    icon={renderIcon(chat.icon, chat.id === activeChatId)} 
+                  />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Footer Settings/Profile */}
-        <div className="p-4 border-t border-zinc-800">
-          <button className="flex items-center gap-3 w-full p-2 hover:bg-zinc-900 rounded-lg text-zinc-300 transition-colors">
-            <Settings size={18} />
-            <span className="text-sm font-medium">Settings</span>
+        {/* Footer / Profile Settings */}
+        <div className="p-5 border-t border-white/[0.04] bg-gradient-to-t from-black/20 to-transparent">
+          
+          {/* Settings Pill */}
+          <button className="flex items-center gap-3 w-full p-3 hover:bg-white/[0.04] rounded-2xl text-zinc-400 hover:text-zinc-200 transition-all duration-300 group mb-2">
+            <Settings size={18} strokeWidth={1.5} className="group-hover:rotate-45 transition-transform duration-500" />
+            <span className="text-[15px] font-light tracking-wide">Preferences</span>
           </button>
-          <button className="flex items-center gap-3 w-full p-2 hover:bg-zinc-900 rounded-lg text-zinc-300 transition-colors mt-1">
-            <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center">
-              <User size={14} />
+          
+          {/* Personalized User Profile */}
+          <button className="flex items-center justify-between w-full p-3 hover:bg-white/[0.04] rounded-2xl transition-all duration-300 group">
+            <div className="flex items-center gap-3.5">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-zinc-700 to-zinc-900 border border-white/10 flex items-center justify-center shadow-inner group-hover:border-amber-500/30 transition-colors">
+                <span className="text-zinc-300 text-sm font-medium tracking-wider">V</span>
+              </div>
+              <div className="flex flex-col items-start">
+                <span className="text-[15px] text-zinc-200 font-medium tracking-wide">Vansh</span>
+                <span className="text-[11px] text-zinc-500 tracking-wider">Primary Account</span>
+              </div>
             </div>
-            <span className="text-sm font-medium">Profile</span>
           </button>
+
         </div>
       </div>
     </>
   );
 };
 
-const HistoryItem: React.FC<{ chat: ChatSession }> = ({ chat }) => {
+// --- History Item Sub-Component ---
+const HistoryItem: React.FC<{ chat: ChatSession, isActive?: boolean, icon: React.ReactNode }> = ({ chat, isActive, icon }) => {
   return (
-    <button className="flex items-center gap-3 w-full text-left p-2 hover:bg-zinc-900 rounded-lg text-zinc-300 transition-colors group">
-      <MessageSquare size={16} className="text-zinc-500 group-hover:text-zinc-300 shrink-0" />
-      <span className="text-sm truncate">{chat.title}</span>
+    <button 
+      className={`relative flex items-center gap-3.5 w-full text-left py-2.5 px-4 rounded-[1rem] transition-all duration-300 group ${
+        isActive 
+          ? 'bg-amber-500/[0.08] text-amber-50' 
+          : 'hover:bg-white/[0.03] text-zinc-400 hover:text-zinc-200'
+      }`}
+    >
+      {/* Soft Active Indicator */}
+      {isActive && (
+        <div className="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-1/2 bg-amber-500 rounded-full opacity-80" />
+      )}
+      
+      {icon}
+      
+      <span className="text-[14px] truncate pr-6 font-light tracking-wide">{chat.title}</span>
+      
+      {/* Options Icon (Shows on hover) */}
+      <div className={`absolute right-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${
+        isActive ? 'opacity-100' : ''
+      }`}>
+        <MoreHorizontal size={16} strokeWidth={1.5} className="text-zinc-500 hover:text-white transition-colors" />
+      </div>
     </button>
   );
 };
