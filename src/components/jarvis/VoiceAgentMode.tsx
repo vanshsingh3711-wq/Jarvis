@@ -22,12 +22,17 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose }) => {
   // Audio Recording Refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.stop();
+      }
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current = null;
       }
       window.speechSynthesis.cancel();
     };
@@ -103,12 +108,49 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose }) => {
     }
   };
 
-  const speakAnswer = (text: string) => {
+  const speakAnswer = async (text: string) => {
+    // Stop any currently playing audio
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current = null;
+    }
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.05;
-    utterance.pitch = 0.95;
-    window.speechSynthesis.speak(utterance);
+
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/voice/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+
+      if (response.status === 204) {
+        // TTS unavailable — fall back to browser speech
+        throw new Error('TTS unavailable');
+      }
+
+      if (!response.ok) {
+        throw new Error(`TTS returned ${response.status}`);
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      audioPlayerRef.current = audio;
+      
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        audioPlayerRef.current = null;
+      };
+
+      await audio.play();
+    } catch {
+      // Fallback: browser built-in speech synthesis
+      console.log('ElevenLabs TTS unavailable, using browser speech fallback');
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.05;
+      utterance.pitch = 0.95;
+      window.speechSynthesis.speak(utterance);
+    }
   };
 
   const sendAudioToBackend = async (audioBlob: Blob) => {
@@ -121,6 +163,10 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose }) => {
         body: formData
       });
       
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`);
+      }
+      
       const data = await response.json();
       
       if (data.status === "needs_validation") {
@@ -130,14 +176,15 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose }) => {
         setNeedsValidation(true);
         setAgentState('retrieving'); // Using retrieving state visually for HITL pause
         speakAnswer("I'm not quite sure I caught that. Did you mean to say this?");
-      } else if (data.status === "success") {
-        setFinalAnswer(data.answer);
-        setCitations(data.citations);
-        setAgentState('answering');
-        speakAnswer(data.answer);
-      } else {
+      } else if (data.status === "rejected_guardrail") {
         setFinalAnswer(data.answer || "Request rejected by guardrails.");
         setAgentState('answering');
+      } else {
+        // "success" or any other completed status
+        setFinalAnswer(data.answer);
+        setCitations(data.citations || []);
+        setAgentState('answering');
+        if (data.answer) speakAnswer(data.answer);
       }
     } catch (error) {
       console.error("API Error:", error);

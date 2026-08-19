@@ -52,3 +52,6 @@ backend/chroma_db/
 backend/hf_cache/
 backend/bm25_corpus.json
 backend/.env
+
+# clerk configuration (can include secrets)
+/.clerk/

@@ -18,6 +18,7 @@ interface ChatMessageProps {
 
 export const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
   const isUser = message.role === 'user';
+  // Accept both 'ai' and 'assistant' as AI roles for compatibility
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {

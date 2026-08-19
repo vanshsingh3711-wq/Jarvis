@@ -45,7 +45,7 @@ def run_evaluation():
         
         # Run retrieval (top 3)
         results = hybrid_search(query, top_k=3)
-        retrieved_ids = [doc.get("id") for doc in results]
+        retrieved_ids = [doc.get("metadata", {}).get("doc_id") for doc in results]
         
         recall_1 = calculate_recall_at_k(retrieved_ids, expected_ids, k=1)
         recall_3 = calculate_recall_at_k(retrieved_ids, expected_ids, k=3)

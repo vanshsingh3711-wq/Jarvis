@@ -4,6 +4,43 @@ import requests
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
 
+ELEVENLABS_VOICE_ID = "jGf6Nvwr7qkFPrcLThmD"
+
+def text_to_speech(text: str) -> bytes | None:
+    """
+    Calls ElevenLabs TTS API to convert text to speech using the configured voice.
+    Returns raw audio bytes (mp3) or None on failure.
+    """
+    api_key = os.getenv("ELEVENLABS_API_KEY")
+    if not api_key:
+        print("Warning: No ElevenLabs API key found, skipping TTS.")
+        return None
+
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
+    headers = {
+        "xi-api-key": api_key,
+        "Content-Type": "application/json",
+        "Accept": "audio/mpeg"
+    }
+    body = {
+        "text": text,
+        "model_id": "eleven_v3",
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.75,
+            "style": 0.0,
+            "use_speaker_boost": True
+        }
+    }
+
+    try:
+        response = requests.post(url, json=body, headers=headers, timeout=30)
+        response.raise_for_status()
+        return response.content
+    except Exception as e:
+        print(f"Error calling ElevenLabs TTS API: {e}")
+        return None
+
 def transcribe_audio(audio_bytes: bytes) -> tuple[str, float]:
     """
     Calls ElevenLabs STT API to transcribe audio.
@@ -21,9 +58,9 @@ def transcribe_audio(audio_bytes: bytes) -> tuple[str, float]:
         "xi-api-key": api_key
     }
     
-    # We assume the incoming audio is a standard format (e.g. mp3/wav)
+    # The frontend records audio as webm; preserve the original format
     files = {
-        "file": ("audio.mp3", io.BytesIO(audio_bytes), "audio/mpeg")
+        "file": ("audio.webm", io.BytesIO(audio_bytes), "audio/webm")
     }
     
     try:

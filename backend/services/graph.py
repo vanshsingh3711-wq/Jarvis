@@ -46,7 +46,7 @@ def input_guardrail_node(state: GraphState):
     
     if "YES" in result:
         return {"status": "rejected_guardrail", "final_answer": "I cannot fulfill this request as it violates safety guardrails."}
-    return {"status": "safe"}
+    return {"status": "processing"}
 
 def retrieve_node(state: GraphState):
     """Hybrid Retrieval from MSMARCO-XI chunks"""
@@ -109,10 +109,10 @@ def route_after_input_guardrail(state: GraphState):
     return "retrieve"
 
 def route_after_hallucination_check(state: GraphState):
-    if state.get("hallucination_retries", 0) >= 2:
-        # We tried twice, it's still hallucinating. Bail out to avoid infinite loop.
-        return END
     if state["status"] == "success":
+        return END
+    if state.get("hallucination_retries", 0) >= 2:
+        # We tried twice, it's still hallucinating. Bail out with best-effort answer.
         return END
     return "generate" # Retry generation
 

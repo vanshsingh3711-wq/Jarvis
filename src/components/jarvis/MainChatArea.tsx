@@ -1,14 +1,11 @@
-import React, { useRef, useEffect } from 'react';
+'use client';
+
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Menu, ShoppingBag, Map, GraduationCap, Phone, Sparkles } from 'lucide-react';
 import { ChatInput } from './ChatInput';
 import { ChatMessage, ChatMessageData } from './ChatMessage';
 import { ParticleOrb } from './ParticleOrb';
 import { UserButton } from '@clerk/nextjs';
-// import { mockMessages } from './MockData';
-
-// --- MOCK DATA (Remove this in your actual code) ---
-const mockMessages: ChatMessageData[] = []; 
-// ---------------------------------------------------
 
 interface MainChatAreaProps {
   onOpenSidebar: () => void;
@@ -17,6 +14,8 @@ interface MainChatAreaProps {
 
 export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpenVoiceMode }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [messages, setMessages] = useState<ChatMessageData[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -24,7 +23,37 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
 
   useEffect(() => {
     scrollToBottom();
-  }, [mockMessages]);
+  }, [messages]);
+
+  const handleSendMessage = useCallback((userMessage: string, response: any) => {
+    if (response === null) {
+      // First call: user just sent the message, add it to the feed and start loading
+      const userMsg: ChatMessageData = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content: userMessage,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setMessages(prev => [...prev, userMsg]);
+      setIsLoading(true);
+      return;
+    }
+
+    // Second call: response arrived from the backend
+    setIsLoading(false);
+    
+    const aiMsg: ChatMessageData = {
+      id: `ai-${Date.now()}`,
+      role: 'ai',
+      content: response.answer || response.final_answer || "No response received.",
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      sources: response.citations?.map((cite: any, i: number) => ({
+        id: cite.id || `src-${i}`,
+        title: cite.content?.substring(0, 60) + '...' || `Source ${i + 1}`,
+      })),
+    };
+    setMessages(prev => [...prev, aiMsg]);
+  }, []);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-transparent relative overflow-hidden">
@@ -67,7 +96,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
           WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 2%, black 98%, transparent 100%)'
         }}
       >
-        {mockMessages.length === 0 ? (
+        {messages.length === 0 ? (
           /* --- Anticipatory Empty State --- */
           <div className="min-h-full flex flex-col items-center justify-center p-4 pb-36 md:p-8 md:pb-40 animate-in fade-in zoom-in-95 duration-1000">
             
@@ -95,9 +124,29 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
           /* --- Populated Chat Feed --- */
           /* Increased bottom padding (pb-40) so the last message fully clears the floating input area */
           <div className="flex flex-col pb-40 pt-6 max-w-4xl mx-auto w-full">
-            {mockMessages.map((msg) => (
+            {messages.map((msg) => (
               <ChatMessage key={msg.id} message={msg} />
             ))}
+            
+            {/* Loading indicator while waiting for AI response */}
+            {isLoading && (
+              <div className="flex gap-4 md:gap-5 px-4 md:px-8 py-5 bg-white/[0.02] backdrop-blur-xl rounded-3xl my-2 mx-2 md:mx-4 border border-white/[0.03] shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="shrink-0 pt-0.5">
+                  <div className="relative flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-amber-500/20 to-amber-900/20 border border-amber-500/20 shadow-[0_4px_20px_rgba(245,158,11,0.1)]">
+                    <Sparkles size={20} className="text-amber-500 animate-pulse" strokeWidth={1.5} />
+                  </div>
+                </div>
+                <div className="flex-1 flex items-center gap-3 py-1">
+                  <span className="text-amber-500/90 text-[15px] font-medium tracking-wide">JARVIS</span>
+                  <div className="flex gap-1.5">
+                    <div className="w-2 h-2 bg-amber-500/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                    <div className="w-2 h-2 bg-amber-500/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                    <div className="w-2 h-2 bg-amber-500/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <div ref={messagesEndRef} />
           </div>
         )}
@@ -106,7 +155,11 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
       {/* Input Area (Floating over the background) */}
       <div className="absolute bottom-0 left-0 w-full z-20 pb-6 pt-12 bg-gradient-to-t from-[#050505] via-[#050505]/95 to-transparent pointer-events-none">
         <div className="pointer-events-auto">
-          <ChatInput onVoiceClick={onOpenVoiceMode} />
+          <ChatInput 
+            onVoiceClick={onOpenVoiceMode} 
+            onSendMessage={handleSendMessage}
+            isLoading={isLoading}
+          />
         </div>
       </div>
     </div>

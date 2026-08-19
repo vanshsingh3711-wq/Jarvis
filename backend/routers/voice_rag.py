@@ -1,6 +1,7 @@
 import time
 import uuid
 from fastapi import APIRouter, UploadFile, File, Form, Request, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
@@ -79,9 +80,13 @@ async def process_voice_query(
         )
 
     # If it completed normally or hit a guardrail refusal
+    # Normalize status: anything that isn't a known non-success state is "success"
+    raw_status = current_state.get("status", "success")
+    final_status = raw_status if raw_status in ("rejected_guardrail",) else "success"
+    
     return RAGResponse(
         thread_id=thread_id,
-        status=current_state.get("status", "success"),
+        status=final_status,
         query_text=transcript,
         cleaned_query=current_state.get("cleaned_query", transcript),
         answer=current_state.get("final_answer", ""),
@@ -113,4 +118,28 @@ async def resume_voice_query(request: Request, body: ResumeRequest):
         cleaned_query=current_state.get("cleaned_query", ""),
         answer=current_state.get("final_answer", ""),
         citations=current_state.get("citations", [])
+    )
+
+class TTSRequest(BaseModel):
+    text: str
+
+@router.post("/tts")
+async def text_to_speech_endpoint(body: TTSRequest):
+    """
+    Converts text to speech using ElevenLabs TTS with the configured JARVIS voice.
+    Returns audio/mpeg bytes.
+    """
+    if not body.text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty.")
+    
+    audio_bytes = audio.text_to_speech(body.text)
+    
+    if audio_bytes is None:
+        # TTS unavailable — frontend will fall back to browser speechSynthesis
+        return Response(status_code=204)
+    
+    return Response(
+        content=audio_bytes,
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": "inline; filename=jarvis_speech.mp3"}
     )

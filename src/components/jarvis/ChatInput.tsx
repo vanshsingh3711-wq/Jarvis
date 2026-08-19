@@ -1,13 +1,15 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Paperclip, ArrowUp, Headphones } from 'lucide-react';
+import { Mic, Paperclip, ArrowUp, Headphones, Loader2 } from 'lucide-react';
 
 interface ChatInputProps {
   onVoiceClick?: () => void;
+  onSendMessage?: (message: string, response: any) => void;
+  isLoading?: boolean;
 }
 
-export const ChatInput: React.FC<ChatInputProps> = ({ onVoiceClick }) => {
+export const ChatInput: React.FC<ChatInputProps> = ({ onVoiceClick, onSendMessage, isLoading = false }) => {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isTyping = message.trim().length > 0;
@@ -20,13 +22,42 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onVoiceClick }) => {
     }
   }, [message]);
 
-  const handleSubmit = () => {
-    if (!message.trim()) return;
-    console.log('Submitted message:', message);
+  const handleSubmit = async () => {
+    if (!message.trim() || isLoading) return;
+    const userMessage = message.trim();
     setMessage('');
     
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
+    }
+
+    // Immediately notify parent of the user message (response will come later)
+    onSendMessage?.(userMessage, null);
+
+    try {
+      const boundary = crypto.randomUUID();
+      const body = `--${boundary}\r\nContent-Disposition: form-data; name="text_query"\r\n\r\n${userMessage}\r\n--${boundary}--\r\n`;
+
+      const response = await fetch('http://localhost:8000/api/v1/voice/query', {
+        method: 'POST',
+        headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+        body: body
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`);
+      }
+
+      const data = await response.json();
+      // Notify parent of the AI response
+      onSendMessage?.(userMessage, data);
+    } catch (error) {
+      console.error("Chat API Error:", error);
+      onSendMessage?.(userMessage, { 
+        status: "error", 
+        answer: "Failed to connect to the backend. Make sure the server is running on port 8000.",
+        citations: [] 
+      });
     }
   };
 
@@ -61,7 +92,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onVoiceClick }) => {
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Ask JARVIS to help with your day..."
-          className="flex-1 max-h-[150px] bg-transparent border-0 resize-none py-3.5 px-2 text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-0 custom-scrollbar text-[15px] leading-relaxed font-light"
+          disabled={isLoading}
+          className="flex-1 max-h-[150px] bg-transparent border-0 resize-none py-3.5 px-2 text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-0 custom-scrollbar text-[15px] leading-relaxed font-light disabled:opacity-50"
           rows={1}
         />
 
@@ -83,7 +115,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onVoiceClick }) => {
             Voice Mode or Send Button
             Swaps between Live Voice Mode and Send depending on if the user is typing
           */}
-          {isTyping ? (
+          {isLoading ? (
+            <div className="p-2.5 shrink-0 rounded-full flex items-center justify-center bg-amber-500/20 text-amber-500">
+              <Loader2 size={22} strokeWidth={2} className="animate-spin" />
+            </div>
+          ) : isTyping ? (
             <button
               onClick={handleSubmit}
               className="p-2.5 shrink-0 rounded-full transition-all duration-300 focus:outline-none flex items-center justify-center bg-amber-500 text-black shadow-md hover:bg-amber-400 hover:scale-105 animate-in zoom-in duration-200"
