@@ -1,5 +1,10 @@
 import os
 import json
+from dotenv import load_dotenv
+
+# Load env variables BEFORE importing HuggingFace to ensure HF_DATASETS_CACHE is respected
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+
 from datasets import load_dataset
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_experimental.text_splitter import SemanticChunker
@@ -12,8 +17,10 @@ BM25_CACHE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "bm25
 
 def process_and_ingest():
     print("Loading MSMARCO-XI Dataset (English slice for demo)...")
-    # For a hackathon demo, we load a small slice of the validation set to keep ingestion fast
-    dataset = load_dataset("ai4bharat/MSMARCO-XI", "default", split="validation[:1000]")
+    # Using streaming=True completely skips the 40GB download and PyArrow crashes!
+    # It instantly streams just the first 100 rows we need for the hackathon demo.
+    dataset = load_dataset("ai4bharat/MSMARCO-XI", "default", split="validation", streaming=True)
+    dataset_slice = dataset.take(100)
     
     print("Applying multiple chunking strategies...")
     
@@ -31,9 +38,14 @@ def process_and_ingest():
     documents = []
     bm25_corpus = []
     
-    for row in dataset:
-        doc_id = row.get("id", str(hash(row["passage"])))
-        text = row["passage"]
+    for row in dataset_slice:
+        doc_id = str(row.get("query_id", hash(row.get("Eng_Query", ""))))
+        
+        # MSMARCO-XI is a Q&A dataset, so we extract the English answer and its supporting passages
+        answer = row.get("Eng_Answer", "")
+        passages = row.get("passages", {}).get("English_passages", [])
+        
+        text = f"Fact/Answer: {answer}\n\nSupporting Context:\n" + "\n".join(passages[:2])
         
         # Apply Metadata-Aware formatting before chunking
         metadata_header = f"Source: MSMARCO | ID: {doc_id} | Language: en\nContent: "
@@ -74,7 +86,6 @@ def process_and_ingest():
         embedding=embeddings,
         persist_directory=CHROMA_PERSIST_DIR
     )
-    vectorstore.persist()
     
     # Save corpus for fast BM25 loading later
     with open(BM25_CACHE_PATH, "w") as f:
