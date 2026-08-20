@@ -12,8 +12,6 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-import { ClerkProvider } from '@clerk/nextjs'
-
 export const metadata: Metadata = {
   title: "JARVIS — Voice-Native RAG Assistant",
   description: "An intelligent voice-first RAG assistant with hybrid retrieval, guardrails, and human-in-the-loop validation.",
@@ -26,9 +24,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <ClerkProvider>
-          {children}
-        </ClerkProvider>
+        {children}
       </body>
     </html>
   );

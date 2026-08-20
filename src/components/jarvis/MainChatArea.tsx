@@ -5,7 +5,6 @@ import { Menu, ShoppingBag, Map, GraduationCap, Phone, Sparkles } from 'lucide-r
 import { ChatInput } from './ChatInput';
 import { ChatMessage, ChatMessageData } from './ChatMessage';
 import { ParticleOrb } from './ParticleOrb';
-import { UserButton } from '@clerk/nextjs';
 import { saveSession, generateSessionTitle } from './historyManager';
 
 interface MainChatAreaProps {
@@ -121,7 +120,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
         </div>
         
         <div className="flex items-center">
-          <UserButton appearance={{ elements: { userButtonAvatarBox: "w-8 h-8 rounded-full border border-white/10" } }} />
+          {/* Auth removed */}
         </div>
       </header>
 
