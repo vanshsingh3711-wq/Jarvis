@@ -12,9 +12,10 @@ interface MainChatAreaProps {
   onOpenVoiceMode: () => void;
   activeThreadId: string | null;
   setActiveThreadId: (id: string) => void;
+  isVoiceMode?: boolean;
 }
 
-export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpenVoiceMode, activeThreadId, setActiveThreadId }) => {
+export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpenVoiceMode, activeThreadId, setActiveThreadId, isVoiceMode }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<ChatMessageData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -27,10 +28,11 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
     scrollToBottom();
   }, [messages]);
 
-  // Load history when activeThreadId changes
+  // Load history when activeThreadId changes or when we return from Voice Mode
   useEffect(() => {
-    if (!activeThreadId) {
-      setMessages([]);
+    // If we don't have a thread, or if voice mode is actively open (overlay is showing), don't fetch yet
+    if (!activeThreadId || isVoiceMode) {
+      if (!activeThreadId) setMessages([]);
       return;
     }
     
@@ -49,7 +51,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
       })
       .catch(err => console.error("Failed to load history:", err))
       .finally(() => setIsLoading(false));
-  }, [activeThreadId]);
+  }, [activeThreadId, isVoiceMode]);
 
   const handleSendMessage = useCallback((userMessage: string, response: any) => {
     if (response === null) {

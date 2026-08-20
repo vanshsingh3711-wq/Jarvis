@@ -43,8 +43,8 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose, activeT
   const isSpeakingRef = useRef<boolean>(false);
   const finalTranscriptRef = useRef<string>("");
 
-  const SILENCE_THRESHOLD = 1500; // 1.5s of silence triggers sending
-  const VOLUME_THRESHOLD = 5; // Sensitivity for VAD
+  const SILENCE_THRESHOLD = 800; // 0.8s of silence triggers sending (faster response)
+  const VOLUME_THRESHOLD = 20; // Sensitivity for VAD (increased to ignore background noise)
 
   const cleanupAudio = () => {
     console.log('[CLIENT VOICE] cleanupAudio called');
@@ -162,8 +162,10 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose, activeT
   };
 
   const startListening = async () => {
+    // Force a fresh websocket connection every time we start listening
     if (wsRef.current) {
-        return;
+        wsRef.current.close();
+        wsRef.current = null;
     }
     setAgentState('listening');
     isListeningRef.current = true;
@@ -240,11 +242,6 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose, activeT
       scriptNodeRef.current = scriptNode;
       
       scriptNode.onaudioprocess = (e) => {
-         console.log('[CLIENT VOICE] audio process fired');
-         if (!isSpeakingRef.current) {
-             console.log('[CLIENT VOICE] audio discarded - VAD not speaking');
-             return;
-         }
          if (ws.readyState !== WebSocket.OPEN) return;
          
          const inputData = e.inputBuffer.getChannelData(0);
@@ -254,85 +251,44 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose, activeT
              pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
          }
          
-         if (ws.readyState === WebSocket.OPEN) {
-             console.log(`[CLIENT VOICE] sending audio ${pcm16.byteLength} bytes`);
-             ws.send(pcm16.buffer);
-         } else {
-             console.log('[CLIENT VOICE] cannot send audio, readyState:', ws.readyState);
-         }
+         ws.send(pcm16.buffer);
       };
       
       source.connect(scriptNode);
-      // scriptNode must be connected to destination to fire onaudioprocess
-      // we use a gain node with 0 volume to prevent echo
       const gainNode = audioContext.createGain();
       gainNode.gain.value = 0;
       scriptNode.connect(gainNode);
       gainNode.connect(audioContext.destination);
 
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-      
-      const checkAudio = () => {
-        if (!analyserRef.current) return;
-        analyserRef.current.getByteFrequencyData(dataArray);
-        
-        let sum = 0;
-        for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
-        const average = sum / bufferLength;
-
-        if (average > VOLUME_THRESHOLD) {
-           // Speech detected
-           if (!isSpeakingRef.current) {
-              console.log('[VOICE] VAD speech started');
-              isSpeakingRef.current = true;
-              // Reset final transcript when user starts speaking a new utterance
-              finalTranscriptRef.current = "";
-              
-              // Interrupt TTS if JARVIS is talking
-              if (agentStateRef.current === 'answering') {
-                if (audioPlayerRef.current) {
-                  audioPlayerRef.current.pause();
-                  audioPlayerRef.current = null;
-                }
-                window.speechSynthesis.cancel();
-                setAgentState('listening');
-                setFinalAnswer("");
-                setCitations([]);
-              }
-           }
-           silenceStartRef.current = 0;
-        } else if (isSpeakingRef.current) {
-           // Silence detected after speech
-           if (silenceStartRef.current === 0) silenceStartRef.current = Date.now();
-           if (Date.now() - silenceStartRef.current > SILENCE_THRESHOLD) {
-               console.log('[VOICE] VAD speech ended');
-               isSpeakingRef.current = false;
-               
-               // Tell backend we're done speaking
-               if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-                   wsRef.current.send(JSON.stringify({ type: "speech_end" }));
-               }
-               
-               // In a perfect world, we wait for ElevenLabs to send the very last `final_transcript`.
-               // Since we might already have the final text in `finalTranscriptRef.current`, 
-               // let's wait a tiny bit to ensure it arrives over WS, then dispatch.
-               setTimeout(() => {
-                   const finalTxt = finalTranscriptRef.current || liveTranscript;
-                   handleFinalizedText(finalTxt);
-               }, 500);
-           }
-        }
-        
-        checkAudioFrameRef.current = requestAnimationFrame(checkAudio);
+      const checkTranscriptStability = () => {
+         if (finalTranscriptRef.current && agentStateRef.current === 'listening') {
+             if ((window as any).lastTranscript !== finalTranscriptRef.current) {
+                 (window as any).lastTranscript = finalTranscriptRef.current;
+                 (window as any).transcriptTime = Date.now();
+             } else if (Date.now() - ((window as any).transcriptTime || Date.now()) > 1500) {
+                 console.log('[VOICE] Transcript stable for 1.5s, submitting');
+                 
+                 const textToSubmit = finalTranscriptRef.current;
+                 finalTranscriptRef.current = ""; // Reset to prevent double submission
+                 (window as any).lastTranscript = "";
+                 
+                 if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                     wsRef.current.send(JSON.stringify({ type: "speech_end" }));
+                 }
+                 
+                 setTimeout(() => {
+                     handleFinalizedText(textToSubmit);
+                 }, 100);
+             }
+         }
+         checkAudioFrameRef.current = requestAnimationFrame(checkTranscriptStability);
       };
       
-      checkAudio();
+      checkTranscriptStability();
 
     } catch (e) {
       console.error("Microphone error", e);
       setAgentState('error');
-      isListeningRef.current = false;
     }
   };
 
@@ -381,10 +337,7 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose, activeT
         URL.revokeObjectURL(audioUrl);
         audioPlayerRef.current = null;
         
-        setAgentState('listening');
-        setFinalAnswer("");
-        setCitations([]);
-        setLiveTranscript("");
+        startListening();
       };
 
       console.log('[VOICE] playback started');
@@ -397,10 +350,7 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose, activeT
       utterance.pitch = 0.95;
       
       utterance.onend = () => {
-        setAgentState('listening');
-        setFinalAnswer("");
-        setCitations([]);
-        setLiveTranscript("");
+        startListening();
       };
       
       window.speechSynthesis.speak(utterance);
