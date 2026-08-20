@@ -9,6 +9,7 @@ export const JarvisAppShell: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
 
   // Trigger smooth entrance animation on load
   useEffect(() => {
@@ -62,10 +63,17 @@ export const JarvisAppShell: React.FC = () => {
         <Sidebar 
           isOpen={isSidebarOpen} 
           onClose={() => setIsSidebarOpen(false)} 
+          activeChatId={activeThreadId || undefined}
+          onSelectChat={(id) => {
+            setActiveThreadId(id);
+            setIsSidebarOpen(false);
+          }}
         />
         <MainChatArea 
           onOpenSidebar={() => setIsSidebarOpen(true)} 
           onOpenVoiceMode={() => setIsVoiceMode(true)}
+          activeThreadId={activeThreadId}
+          setActiveThreadId={setActiveThreadId}
         />
       </div>
 
@@ -80,7 +88,11 @@ export const JarvisAppShell: React.FC = () => {
       >
         {isVoiceMode && (
           <div className="w-full h-full animate-in fade-in zoom-in-95 duration-700 ease-out">
-            <VoiceAgentMode onClose={() => setIsVoiceMode(false)} />
+            <VoiceAgentMode 
+              onClose={() => setIsVoiceMode(false)} 
+              activeThreadId={activeThreadId}
+              setActiveThreadId={setActiveThreadId}
+            />
           </div>
         )}
       </div>

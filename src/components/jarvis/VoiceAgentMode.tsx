@@ -1,17 +1,28 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { X, Mic, MicOff, Activity, ShieldAlert, Loader2, Sparkles, Check, Send } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { X, Mic, MicOff, Activity, ShieldAlert, Loader2, Sparkles, Check } from 'lucide-react';
 import { ParticleOrb, VoiceAgentState } from './ParticleOrb';
+import { saveSession, generateSessionTitle } from './historyManager';
 
 interface VoiceAgentModeProps {
   onClose: () => void;
+  activeThreadId: string | null;
+  setActiveThreadId: (id: string) => void;
 }
 
-export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose }) => {
+export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose, activeThreadId, setActiveThreadId }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [agentState, setAgentState] = useState<VoiceAgentState>('idle');
   
+  // Transcription States
+  const [liveTranscript, setLiveTranscript] = useState("");
+  const isListeningRef = useRef(false);
+  const agentStateRef = useRef<VoiceAgentState>('idle');
+  
+  useEffect(() => {
+    agentStateRef.current = agentState;
+  }, [agentState]);
+  
   // API Integration States
-  const [threadId, setThreadId] = useState<string | null>(null);
   const [needsValidation, setNeedsValidation] = useState(false);
   const [repromptMessage, setRepromptMessage] = useState("");
   const [userIntent, setUserIntent] = useState("");
@@ -19,17 +30,59 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose }) => {
   const [finalAnswer, setFinalAnswer] = useState("");
   const [citations, setCitations] = useState<any[]>([]);
   
-  // Audio Recording Refs
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
-  // Cleanup on unmount
+  // Audio Recording Refs
+  const wsRef = useRef<WebSocket | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const scriptNodeRef = useRef<ScriptProcessorNode | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const checkAudioFrameRef = useRef<number>(0);
+  const silenceStartRef = useRef<number>(0);
+  const isSpeakingRef = useRef<boolean>(false);
+  const finalTranscriptRef = useRef<string>("");
+
+  const SILENCE_THRESHOLD = 1500; // 1.5s of silence triggers sending
+  const VOLUME_THRESHOLD = 5; // Sensitivity for VAD
+
+  const cleanupAudio = () => {
+    console.log('[CLIENT VOICE] cleanupAudio called');
+    console.log('[CLIENT VOICE] cleanup caller stack:');
+    console.trace();
+    if (checkAudioFrameRef.current) cancelAnimationFrame(checkAudioFrameRef.current);
+    if (wsRef.current) {
+        console.log('[CLIENT VOICE] closing websocket');
+        wsRef.current.close();
+        wsRef.current = null;
+    }
+    if (scriptNodeRef.current) {
+        scriptNodeRef.current.disconnect();
+        scriptNodeRef.current = null;
+    }
+    if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(track => track.stop());
+    }
+    if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {});
+    }
+    audioContextRef.current = null;
+    analyserRef.current = null;
+    audioStreamRef.current = null;
+  };
+
   useEffect(() => {
+    console.log('[CLIENT VOICE] voice session started');
+    const timer = setTimeout(() => {
+       if (!isMuted && !isListeningRef.current) {
+          startListening();
+       }
+    }, 500);
+
     return () => {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-        mediaRecorderRef.current.stop();
-      }
+      console.log('[CLIENT VOICE] voice session stopped');
+      clearTimeout(timer);
+      cleanupAudio();
       if (audioPlayerRef.current) {
         audioPlayerRef.current.pause();
         audioPlayerRef.current = null;
@@ -38,78 +91,269 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose }) => {
     };
   }, []);
 
-  const getStateConfig = () => {
-    if (isMuted) return { title: 'Paused', sub: 'Microphone is muted', color: 'bg-zinc-600', text: 'text-zinc-500', icon: <MicOff size={18} strokeWidth={1.5} /> };
-    
-    switch (agentState) {
-      case 'listening': return { title: "I'm listening...", sub: 'Tap mic to stop', color: 'bg-amber-500', text: 'text-amber-500', icon: <Mic size={18} strokeWidth={1.5} /> };
-      case 'processing': return { title: 'Thinking...', sub: 'Transcribing & Processing', color: 'bg-zinc-300', text: 'text-zinc-400', icon: <Loader2 size={18} className="animate-spin" strokeWidth={1.5} /> };
-      case 'retrieving': return { title: 'Clarification Needed', sub: 'Human-in-the-Loop', color: 'bg-blue-500', text: 'text-blue-400', icon: <Sparkles size={18} className="animate-pulse" strokeWidth={1.5} /> };
-      case 'answering': return { title: 'JARVIS', sub: 'Answer Ready', color: 'bg-amber-400', text: 'text-amber-400', icon: <Activity size={18} className="animate-bounce" strokeWidth={1.5} /> };
-      case 'error': return { title: 'Error', sub: 'Something went wrong', color: 'bg-red-500', text: 'text-red-500', icon: <ShieldAlert size={18} strokeWidth={1.5} /> };
-      case 'idle':
-      default: return { title: 'How can I help?', sub: 'Tap the mic to speak', color: 'bg-zinc-400', text: 'text-zinc-500', icon: <Mic size={18} strokeWidth={1.5} /> };
+  const handleFinalizedText = async (finalText: string) => {
+    if (!finalText.trim()) {
+        // Nothing was actually said or it was background noise
+        setAgentState('listening');
+        return;
     }
-  };
-
-  const config = getStateConfig();
-
-  const startRecording = async () => {
+    
+    setAgentState('processing');
+    console.log('[VOICE] query router: sending to backend', finalText);
+    console.log('[VOICE] generation started');
+    
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
+      const formData = new FormData();
+      formData.append('text_query', finalText);
+      if (activeThreadId) {
+        formData.append('thread_id', activeThreadId);
+      }
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
-      };
+      const response = await fetch('http://localhost:8000/api/v1/voice/query', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+      const data = await response.json();
+      console.log('[VOICE] generation completed', data);
+      
+      if (!activeThreadId && data.thread_id) {
+        setActiveThreadId(data.thread_id);
+        saveSession({
+          id: data.thread_id,
+          title: generateSessionTitle(data.query_text || "Voice Session"),
+          date: new Date().toISOString(),
+          icon: 'sparkle'
+        });
+      }
 
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        await sendAudioToBackend(audioBlob);
-        stream.getTracks().forEach(track => track.stop());
-      };
+      if (data.status === 'needs_validation') {
+        setRepromptMessage(data.reprompt_message);
+        setUserIntent(data.query_text);
+        setNeedsValidation(true);
+        setAgentState('retrieving'); 
+        speakAnswer("I'm not quite sure I caught that. Did you mean to say this?");
+      } else if (data.status === "rejected_guardrail") {
+        setFinalAnswer(data.answer || "Request rejected by guardrails.");
+        setAgentState('answering');
+        if (data.answer) await speakAnswer(data.answer);
+      } else {
+        setFinalAnswer(data.answer);
+        setCitations(data.citations || []);
+        
+        // If discarded by intent router (e.g. NOT_DIRECTED_TO_ASSISTANT)
+        if (data.answer === "" && data.status === "fast_reply") {
+             setAgentState('listening');
+             return;
+        }
 
-      mediaRecorder.start();
-      setAgentState('listening');
-      setFinalAnswer("");
-      setCitations([]);
-      setNeedsValidation(false);
-      window.speechSynthesis.cancel();
-    } catch (err) {
-      console.error("Error accessing microphone:", err);
+        setAgentState('answering');
+        if (data.answer) {
+          await speakAnswer(data.answer);
+        } else {
+          setAgentState('listening');
+        }
+      }
+    } catch (e) {
+      console.error(e);
       setAgentState('error');
     }
   };
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
-      setAgentState('processing');
+  const startListening = async () => {
+    if (wsRef.current) {
+        return;
     }
+    setAgentState('listening');
+    isListeningRef.current = true;
+    setFinalAnswer("");
+    setCitations([]);
+    setLiveTranscript("");
+    finalTranscriptRef.current = "";
+    setNeedsValidation(false);
+    window.speechSynthesis.cancel();
+    
+    try {
+      cleanupAudio();
+      
+      // Connect WebSocket
+      console.log('[CLIENT VOICE] creating websocket');
+      const ws = new WebSocket('ws://localhost:8000/api/v1/voice/stream');
+      wsRef.current = ws;
+      
+      ws.onopen = () => {
+          console.log('[CLIENT VOICE] websocket opened');
+      };
+
+      ws.onclose = (e) => {
+          console.log('[CLIENT VOICE] websocket closed', e.code, e.reason);
+      };
+      
+      ws.onmessage = (event) => {
+         try {
+             const data = JSON.parse(event.data);
+             const type = data.message_type || data.type;
+             if (type === 'partial_transcript') {
+                 console.log('[VOICE] partial transcript:', data.text);
+                 setLiveTranscript(data.text);
+                 finalTranscriptRef.current = data.text;
+             } else if (type === 'final_transcript' || type === 'committed_transcript') {
+                 console.log('[VOICE] final transcript:', data.text);
+                 finalTranscriptRef.current = data.text;
+             } else {
+                 console.log('[CLIENT VOICE] websocket message', data);
+             }
+         } catch (e) {
+             console.error("WS Parse Error", e);
+         }
+      };
+      
+      console.log('[VOICE] microphone started');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1
+        }
+      });
+      console.log('[VOICE] microphone permission granted');
+      console.log('[VOICE] audio stream active');
+      
+      audioStreamRef.current = stream;
+      
+      // Force 16kHz for ElevenLabs STT
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const audioContext = new AudioCtx({ sampleRate: 16000 });
+      audioContextRef.current = audioContext;
+      
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 512;
+      analyserRef.current = analyser;
+      
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+      
+      const bufferSize = 4096;
+      const scriptNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
+      scriptNodeRef.current = scriptNode;
+      
+      scriptNode.onaudioprocess = (e) => {
+         console.log('[CLIENT VOICE] audio process fired');
+         if (!isSpeakingRef.current) {
+             console.log('[CLIENT VOICE] audio discarded - VAD not speaking');
+             return;
+         }
+         if (ws.readyState !== WebSocket.OPEN) return;
+         
+         const inputData = e.inputBuffer.getChannelData(0);
+         const pcm16 = new Int16Array(inputData.length);
+         for (let i = 0; i < inputData.length; i++) {
+             const s = Math.max(-1, Math.min(1, inputData[i]));
+             pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+         }
+         
+         if (ws.readyState === WebSocket.OPEN) {
+             console.log(`[CLIENT VOICE] sending audio ${pcm16.byteLength} bytes`);
+             ws.send(pcm16.buffer);
+         } else {
+             console.log('[CLIENT VOICE] cannot send audio, readyState:', ws.readyState);
+         }
+      };
+      
+      source.connect(scriptNode);
+      // scriptNode must be connected to destination to fire onaudioprocess
+      // we use a gain node with 0 volume to prevent echo
+      const gainNode = audioContext.createGain();
+      gainNode.gain.value = 0;
+      scriptNode.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      
+      const checkAudio = () => {
+        if (!analyserRef.current) return;
+        analyserRef.current.getByteFrequencyData(dataArray);
+        
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
+        const average = sum / bufferLength;
+
+        if (average > VOLUME_THRESHOLD) {
+           // Speech detected
+           if (!isSpeakingRef.current) {
+              console.log('[VOICE] VAD speech started');
+              isSpeakingRef.current = true;
+              // Reset final transcript when user starts speaking a new utterance
+              finalTranscriptRef.current = "";
+              
+              // Interrupt TTS if JARVIS is talking
+              if (agentStateRef.current === 'answering') {
+                if (audioPlayerRef.current) {
+                  audioPlayerRef.current.pause();
+                  audioPlayerRef.current = null;
+                }
+                window.speechSynthesis.cancel();
+                setAgentState('listening');
+                setFinalAnswer("");
+                setCitations([]);
+              }
+           }
+           silenceStartRef.current = 0;
+        } else if (isSpeakingRef.current) {
+           // Silence detected after speech
+           if (silenceStartRef.current === 0) silenceStartRef.current = Date.now();
+           if (Date.now() - silenceStartRef.current > SILENCE_THRESHOLD) {
+               console.log('[VOICE] VAD speech ended');
+               isSpeakingRef.current = false;
+               
+               // Tell backend we're done speaking
+               if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                   wsRef.current.send(JSON.stringify({ type: "speech_end" }));
+               }
+               
+               // In a perfect world, we wait for ElevenLabs to send the very last `final_transcript`.
+               // Since we might already have the final text in `finalTranscriptRef.current`, 
+               // let's wait a tiny bit to ensure it arrives over WS, then dispatch.
+               setTimeout(() => {
+                   const finalTxt = finalTranscriptRef.current || liveTranscript;
+                   handleFinalizedText(finalTxt);
+               }, 500);
+           }
+        }
+        
+        checkAudioFrameRef.current = requestAnimationFrame(checkAudio);
+      };
+      
+      checkAudio();
+
+    } catch (e) {
+      console.error("Microphone error", e);
+      setAgentState('error');
+      isListeningRef.current = false;
+    }
+  };
+
+  const stopListening = () => {
+    isListeningRef.current = false;
+    cleanupAudio();
+    setAgentState(prev => (prev === 'listening' ? 'idle' : prev));
+    setLiveTranscript("");
   };
 
   const handleMicClick = () => {
     if (isMuted) {
       setIsMuted(false);
-      setAgentState('idle');
-      return;
-    }
-    
-    if (agentState === 'idle' || agentState === 'answering' || agentState === 'error') {
-      startRecording();
-    } else if (agentState === 'listening') {
-      stopRecording();
+      startListening();
     } else {
       setIsMuted(true);
-      setAgentState('idle');
-      if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
+      stopListening();
     }
   };
 
   const speakAnswer = async (text: string) => {
-    // Stop any currently playing audio
     if (audioPlayerRef.current) {
       audioPlayerRef.current.pause();
       audioPlayerRef.current = null;
@@ -117,22 +361,18 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose }) => {
     window.speechSynthesis.cancel();
 
     try {
+      console.log('[VOICE] TTS started');
       const response = await fetch('http://localhost:8000/api/v1/voice/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text })
       });
 
-      if (response.status === 204) {
-        // TTS unavailable — fall back to browser speech
-        throw new Error('TTS unavailable');
-      }
-
-      if (!response.ok) {
-        throw new Error(`TTS returned ${response.status}`);
-      }
+      if (response.status === 204) throw new Error('TTS unavailable');
+      if (!response.ok) throw new Error(`TTS returned ${response.status}`);
 
       const audioBlob = await response.blob();
+      console.log('[VOICE] TTS audio received');
       const audioUrl = URL.createObjectURL(audioBlob);
       const audio = new Audio(audioUrl);
       audioPlayerRef.current = audio;
@@ -140,60 +380,35 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose }) => {
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl);
         audioPlayerRef.current = null;
+        
+        setAgentState('listening');
+        setFinalAnswer("");
+        setCitations([]);
+        setLiveTranscript("");
       };
 
+      console.log('[VOICE] playback started');
       await audio.play();
+      
     } catch {
-      // Fallback: browser built-in speech synthesis
       console.log('ElevenLabs TTS unavailable, using browser speech fallback');
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.05;
       utterance.pitch = 0.95;
+      
+      utterance.onend = () => {
+        setAgentState('listening');
+        setFinalAnswer("");
+        setCitations([]);
+        setLiveTranscript("");
+      };
+      
       window.speechSynthesis.speak(utterance);
     }
   };
 
-  const sendAudioToBackend = async (audioBlob: Blob) => {
-    try {
-      const formData = new FormData();
-      formData.append('audio_file', audioBlob, 'recording.webm');
-
-      const response = await fetch('http://localhost:8000/api/v1/voice/query', {
-        method: 'POST',
-        body: formData
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Server returned ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.status === "needs_validation") {
-        setThreadId(data.thread_id);
-        setRepromptMessage(data.reprompt_message);
-        setUserIntent(data.query_text);
-        setNeedsValidation(true);
-        setAgentState('retrieving'); // Using retrieving state visually for HITL pause
-        speakAnswer("I'm not quite sure I caught that. Did you mean to say this?");
-      } else if (data.status === "rejected_guardrail") {
-        setFinalAnswer(data.answer || "Request rejected by guardrails.");
-        setAgentState('answering');
-      } else {
-        // "success" or any other completed status
-        setFinalAnswer(data.answer);
-        setCitations(data.citations || []);
-        setAgentState('answering');
-        if (data.answer) speakAnswer(data.answer);
-      }
-    } catch (error) {
-      console.error("API Error:", error);
-      setAgentState('error');
-    }
-  };
-
   const handleResumeWorkflow = async () => {
-    if (!threadId || !userIntent.trim()) return;
+    if (!activeThreadId || !userIntent.trim()) return;
     
     setNeedsValidation(false);
     setAgentState('processing');
@@ -203,7 +418,7 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose }) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          thread_id: threadId,
+          thread_id: activeThreadId,
           validated_intent: userIntent
         })
       });
@@ -225,40 +440,50 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose }) => {
     }
   };
 
+  const getStateConfig = () => {
+    if (isMuted && agentState === 'idle') return { title: 'Paused', sub: 'Microphone is muted', color: 'bg-zinc-600', text: 'text-zinc-500', icon: <MicOff size={18} strokeWidth={1.5} /> };
+    
+    switch (agentState) {
+      case 'listening': return { title: liveTranscript || "I'm listening...", sub: 'Speak normally. Auto-detecting silence.', color: 'bg-amber-500', text: 'text-amber-500', icon: <Mic size={18} strokeWidth={1.5} /> };
+      case 'processing': return { title: 'Thinking...', sub: 'Processing your request', color: 'bg-zinc-300', text: 'text-zinc-400', icon: <Loader2 size={18} className="animate-spin" strokeWidth={1.5} /> };
+      case 'retrieving': return { title: 'Clarification Needed', sub: 'Human-in-the-Loop', color: 'bg-blue-500', text: 'text-blue-400', icon: <Sparkles size={18} className="animate-pulse" strokeWidth={1.5} /> };
+      case 'answering': return { title: 'JARVIS', sub: 'Answer Ready', color: 'bg-amber-400', text: 'text-amber-400', icon: <Activity size={18} className="animate-bounce" strokeWidth={1.5} /> };
+      case 'error': return { title: 'Error', sub: 'Something went wrong', color: 'bg-red-500', text: 'text-red-500', icon: <ShieldAlert size={18} strokeWidth={1.5} /> };
+      case 'idle':
+      default: return { title: 'Initializing...', sub: 'Preparing microphone', color: 'bg-zinc-400', text: 'text-zinc-500', icon: <Loader2 size={18} className="animate-spin" strokeWidth={1.5} /> };
+    }
+  };
+
+  const config = getStateConfig();
+
   return (
     <div className="flex flex-col items-center justify-center h-full w-full relative">
-      {/* --- Ambient Background Lighting --- */}
       <div className={`absolute inset-0 z-0 opacity-15 blur-[120px] transition-colors duration-1000 ${config.color}`} style={{ transform: 'scale(1.2)' }} />
 
-      {/* Top Controls - Exit */}
       <div className="absolute top-6 right-6 z-50">
         <button onClick={onClose} className="group flex items-center justify-center p-3 bg-white/[0.03] backdrop-blur-2xl border border-white/[0.05] rounded-full text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.08] transition-all duration-300 focus:outline-none" title="Close Voice Mode">
           <X size={20} strokeWidth={1.5} />
         </button>
       </div>
 
-      {/* Main Container */}
       <div className="flex-1 flex flex-col items-center justify-center w-full max-w-4xl mx-auto relative z-10 pt-12 px-6">
         
-        {/* Particle Orb Container */}
-        <div className={`relative w-full h-[25vh] min-h-[200px] flex items-center justify-center mb-6 transition-all duration-700 ${isMuted ? 'opacity-40 scale-95 grayscale' : 'opacity-100 scale-100'}`}>
-          <ParticleOrb state={isMuted ? 'idle' : agentState} />
+        <div className={`relative w-full h-[25vh] min-h-[200px] flex items-center justify-center mb-6 transition-all duration-700 ${isMuted && agentState === 'idle' ? 'opacity-40 scale-95 grayscale' : 'opacity-100 scale-100'}`}>
+          <ParticleOrb state={isMuted && agentState === 'idle' ? 'idle' : agentState} />
         </div>
 
-        {/* Cinematic Status Text */}
         {!needsValidation && !finalAnswer && (
-          <div className="text-center space-y-4 mb-20 h-28">
+          <div className="text-center space-y-4 mb-20 h-28 max-w-2xl">
             <div className="flex items-center justify-center gap-2.5 text-zinc-500">
               {config.icon}
               <span className="text-[13px] font-medium tracking-wide">{config.sub}</span>
             </div>
-            <h2 className="text-4xl md:text-6xl font-extralight tracking-wide text-zinc-100 transition-all duration-500 drop-shadow-sm">
+            <h2 className="text-4xl md:text-5xl font-extralight tracking-wide text-zinc-100 transition-all duration-500 drop-shadow-sm line-clamp-3">
               {config.title}
             </h2>
           </div>
         )}
 
-        {/* Human-in-the-Loop Validation UI */}
         {needsValidation && (
           <div className="w-full max-w-2xl bg-black/40 backdrop-blur-xl border border-amber-500/30 rounded-2xl p-6 mb-12 animate-in fade-in slide-in-from-bottom-4 shadow-2xl">
             <div className="flex items-center gap-3 text-amber-400 mb-4">
@@ -284,7 +509,6 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose }) => {
           </div>
         )}
 
-        {/* Final Answer Display */}
         {finalAnswer && !needsValidation && (
           <div className="w-full max-w-3xl bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 mb-12 animate-in fade-in slide-in-from-bottom-4 shadow-2xl max-h-[40vh] overflow-y-auto custom-scrollbar">
             <h3 className="text-zinc-400 text-sm font-medium tracking-wider uppercase mb-4">JARVIS Response</h3>
@@ -308,7 +532,6 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose }) => {
           </div>
         )}
 
-        {/* The Core Control Button (Microphone) */}
         <div className="relative flex items-center justify-center pb-10">
           {!isMuted && agentState === 'listening' && (
             <>
@@ -324,7 +547,7 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose }) => {
                 ? 'bg-white/[0.02] border-white/[0.05] text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-300' 
                 : 'bg-white/[0.05] border-white/10 text-zinc-100 hover:bg-white/[0.08] hover:scale-105'
             } ${agentState === 'listening' ? 'bg-amber-500/20 border-amber-500/50' : ''}`}
-            title={agentState === 'listening' ? 'Stop Recording' : isMuted ? "Initialize Audio" : "Start Recording"}
+            title={isMuted ? "Unmute Microphone" : "Mute Microphone"}
           >
             {isMuted ? <MicOff size={28} strokeWidth={1.5} /> : <Mic size={28} strokeWidth={1.5} className={agentState === 'listening' ? 'animate-pulse text-amber-400' : ''} />}
           </button>

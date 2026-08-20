@@ -7,9 +7,10 @@ interface ChatInputProps {
   onVoiceClick?: () => void;
   onSendMessage?: (message: string, response: any) => void;
   isLoading?: boolean;
+  activeThreadId?: string | null;
 }
 
-export const ChatInput: React.FC<ChatInputProps> = ({ onVoiceClick, onSendMessage, isLoading = false }) => {
+export const ChatInput: React.FC<ChatInputProps> = ({ onVoiceClick, onSendMessage, isLoading = false, activeThreadId = null }) => {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isTyping = message.trim().length > 0;
@@ -36,7 +37,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onVoiceClick, onSendMessag
 
     try {
       const boundary = crypto.randomUUID();
-      const body = `--${boundary}\r\nContent-Disposition: form-data; name="text_query"\r\n\r\n${userMessage}\r\n--${boundary}--\r\n`;
+      let body = `--${boundary}\r\nContent-Disposition: form-data; name="text_query"\r\n\r\n${userMessage}\r\n`;
+      
+      if (activeThreadId) {
+        body += `--${boundary}\r\nContent-Disposition: form-data; name="thread_id"\r\n\r\n${activeThreadId}\r\n`;
+      }
+      
+      body += `--${boundary}--\r\n`;
 
       const response = await fetch('http://localhost:8000/api/v1/voice/query', {
         method: 'POST',

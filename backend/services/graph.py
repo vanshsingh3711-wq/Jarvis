@@ -1,4 +1,6 @@
-from typing import TypedDict, List, Dict, Any, Optional
+from typing import TypedDict, List, Dict, Any, Optional, Annotated
+import operator
+import json
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_openai import ChatOpenAI
@@ -18,6 +20,7 @@ class GraphState(TypedDict):
     status: str  # "success", "needs_validation", "rejected_guardrail"
     reprompt_message: Optional[str]
     hallucination_retries: int
+    chat_history: Annotated[List[Dict[str, str]], operator.add]
 
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
 fast_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
@@ -26,7 +29,7 @@ fast_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 def clean_disfluencies_node(state: GraphState):
     """Normalizes Hinglish and disfluencies"""
-    cleaned = audio.clean_disfluencies(state["raw_transcript"])
+    cleaned = audio.clean_disfluencies(state["raw_transcript"], state.get("chat_history", []))
     return {"cleaned_query": cleaned}
 
 def intent_validator_node(state: GraphState):
@@ -36,16 +39,49 @@ def intent_validator_node(state: GraphState):
     # or we handle it in the router. LangGraph uses `interrupt_before` in compilation.
     pass
 
-def input_guardrail_node(state: GraphState):
-    """Checks if query is malicious or off-topic BEFORE retrieval."""
+def intent_routing_node(state: GraphState):
+    """Checks if query is malicious, off-topic, or just casual conversation."""
     prompt = PromptTemplate.from_template(
-        "Is this query malicious, harmful, or completely off-topic for a standard knowledge base? "
-        "Query: '{query}'\nAnswer strictly YES or NO."
+        "You are an intent router for a conversational AI.\n"
+        "User Query: '{query}'\n\n"
+        "Classify the query into one of these categories:\n"
+        "1. NOT_DIRECTED_TO_ASSISTANT: if the user is clearly talking to someone else in the room and not the AI.\n"
+        "2. UNSAFE: if it is harmful, malicious, or inappropriate.\n"
+        "3. COMMAND: if the user is giving an instruction to the AI itself (e.g., 'shut up', 'stop', 'wait', 'pause').\n"
+        "4. CASUAL_CONVERSATION: if it is small talk, greetings ('hey', 'hello', 'what's up', 'how are you', 'hi jarvis'), or general knowledge that does NOT require searching a specific database.\n"
+        "5. RAG_QUERY: if it requires searching the knowledge base (e.g., asking about specific policies, documents, or technical facts).\n\n"
+        "If the category is CASUAL_CONVERSATION, you MUST also provide a conversational answer to the query in the exact same language as the user. This bypasses retrieval for ultra-fast response.\n"
+        "If the category is COMMAND, you MUST provide a very short acknowledgement (e.g., 'Okay', 'Stopping').\n"
+        "Output your response strictly as a JSON object with keys 'intent' (string) and 'answer' (string, empty if not CASUAL/COMMAND)."
     )
-    result = (prompt | fast_llm).invoke({"query": state["cleaned_query"]}).content.strip().upper()
     
-    if "YES" in result:
+    fast_llm_json = ChatOpenAI(model="gpt-4o-mini", temperature=0, model_kwargs={"response_format": {"type": "json_object"}})
+    result = (prompt | fast_llm_json).invoke({"query": state["cleaned_query"]}).content
+    
+    try:
+        data = json.loads(result)
+        intent = data.get("intent", "RAG").upper()
+        answer = data.get("answer", "")
+    except Exception:
+        intent = "RAG"
+        answer = ""
+        
+    if intent == "NOT_DIRECTED_TO_ASSISTANT":
+        # Silently drop the request
+        return {"status": "fast_reply", "final_answer": "", "citations": []}
+    elif intent == "UNSAFE":
         return {"status": "rejected_guardrail", "final_answer": "I cannot fulfill this request as it violates safety guardrails."}
+    elif intent == "COMMAND":
+        # Do not add simple commands to history to avoid cluttering memory
+        return {"status": "fast_reply", "final_answer": answer, "citations": []}
+    elif intent == "CASUAL_CONVERSATION":
+        new_history = [
+            {"role": "user", "content": state["cleaned_query"]},
+            {"role": "assistant", "content": answer}
+        ]
+        return {"status": "fast_reply", "final_answer": answer, "chat_history": new_history, "citations": []}
+    
+
     return {"status": "processing"}
 
 def retrieve_node(state: GraphState):
@@ -69,24 +105,44 @@ def generate_node(state: GraphState):
         })
         context_str += f"[{doc_id}]: {doc.get('content', '')}\n\n"
 
+    history_str = ""
+    if state.get("chat_history"):
+        history_str = "Chat History:\n" + "\n".join([f"{msg['role']}: {msg['content']}" for msg in state["chat_history"]]) + "\n\n"
+
     prompt = PromptTemplate.from_template(
-        "Answer the question based ONLY on the context. You MUST use inline citations like [doc_id].\n"
-        "Context:\n{context}\n\nQuestion: {query}\nAnswer:"
+        "You are Jarvis, a helpful AI assistant. You have access to a database of context, but you are also highly knowledgeable in general topics.\n\n"
+        "{history}"
+        "Context:\n{context}\n\n"
+        "Question: {query}\n\n"
+        "Instructions:\n"
+        "1. If the context contains the answer, use it and include citations like [doc_id].\n"
+        "2. If the context is completely irrelevant to the question (like basic math or greetings), IGNORE the context entirely and just answer the question naturally.\n"
+        "3. CRITICAL: You MUST respond in the EXACT SAME LANGUAGE as the user's Question. If the user asks in Hindi, answer in Hindi.\n"
+        "Answer:"
     )
     
     answer = (prompt | llm).invoke({
+        "history": history_str,
         "context": context_str,
         "query": state["cleaned_query"]
     }).content
     
-    return {"final_answer": answer, "citations": citations}
+    # Append the new interaction to the history
+    new_history = [
+        {"role": "user", "content": state["cleaned_query"]},
+        {"role": "assistant", "content": answer}
+    ]
+    
+    return {"final_answer": answer, "citations": citations, "chat_history": new_history}
 
 def hallucination_guardrail_node(state: GraphState):
     """Checks if the generated answer is grounded in the retrieved documents."""
     prompt = PromptTemplate.from_template(
         "Does this answer contain facts NOT present in the context? "
         "Context: {context}\nAnswer: {answer}\n"
-        "Reply STRICTLY 'YES' (it contains hallucinations) or 'NO' (it is fully grounded)."
+        "CRITICAL INSTRUCTION: If the answer is a general knowledge fact, basic math, or a conversational greeting, you MUST reply 'NO'. "
+        "You should ONLY reply 'YES' if the user asked a domain-specific question and the answer fabricated domain-specific information not found in the context.\n"
+        "Reply STRICTLY 'YES' (it contains hallucinations) or 'NO' (it is fully grounded or general knowledge)."
     )
     context_str = str(state["retrieved_docs"])
     result = (prompt | fast_llm).invoke({"context": context_str, "answer": state["final_answer"]}).content.strip().upper()
@@ -101,10 +157,10 @@ def hallucination_guardrail_node(state: GraphState):
 def route_after_cleaning(state: GraphState):
     if state["stt_confidence"] < 0.7:
         return "human_validation"
-    return "input_guardrail"
+    return "intent_routing"
 
-def route_after_input_guardrail(state: GraphState):
-    if state["status"] == "rejected_guardrail":
+def route_after_intent(state: GraphState):
+    if state["status"] in ["rejected_guardrail", "fast_reply"]:
         return END
     return "retrieve"
 
@@ -122,7 +178,7 @@ workflow = StateGraph(GraphState)
 
 workflow.add_node("clean_disfluencies", clean_disfluencies_node)
 workflow.add_node("intent_validator", intent_validator_node)
-workflow.add_node("input_guardrail", input_guardrail_node)
+workflow.add_node("intent_routing", intent_routing_node)
 workflow.add_node("retrieve", retrieve_node)
 workflow.add_node("generate", generate_node)
 workflow.add_node("hallucination_guardrail", hallucination_guardrail_node)
@@ -132,14 +188,14 @@ workflow.set_entry_point("clean_disfluencies")
 workflow.add_conditional_edges(
     "clean_disfluencies",
     route_after_cleaning,
-    {"human_validation": "intent_validator", "input_guardrail": "input_guardrail"}
+    {"human_validation": "intent_validator", "intent_routing": "intent_routing"}
 )
 
-workflow.add_edge("intent_validator", "input_guardrail")
+workflow.add_edge("intent_validator", "intent_routing")
 
 workflow.add_conditional_edges(
-    "input_guardrail",
-    route_after_input_guardrail,
+    "intent_routing",
+    route_after_intent,
     {END: END, "retrieve": "retrieve"}
 )
 

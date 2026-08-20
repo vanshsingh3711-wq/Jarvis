@@ -1,29 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, Settings, Plus, MoreHorizontal, 
   Sparkles, AlignLeft, Calendar, Briefcase
 } from 'lucide-react';
-// import { mockChatHistory, ChatSession } from './MockData';
-
-// --- MOCK DATA (Updated to reflect a General Life Assistant) ---
-interface ChatSession { id: string; title: string; date: string; icon: 'calendar' | 'briefcase' | 'sparkle'; }
-const mockChatHistory: ChatSession[] = [
-  { id: '1', title: 'Morning Briefing & Weather', date: 'today', icon: 'sparkle' },
-  { id: '2', title: 'Dark Room Storefront Metrics', date: 'today', icon: 'briefcase' },
-  { id: '3', title: 'Goa Trip Logistics & Itinerary', date: 'yesterday', icon: 'calendar' },
-];
-// ---------------------------------------------------
+import { getStoredSessions, ChatSession, getRelativeDateString } from './historyManager';
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   activeChatId?: string;
+  onSelectChat: (id: string) => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, activeChatId = '1' }) => {
-  const todayChats = mockChatHistory.filter((chat) => chat.date === 'today');
-  const yesterdayChats = mockChatHistory.filter((chat) => chat.date === 'yesterday');
+export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, activeChatId, onSelectChat }) => {
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+  useEffect(() => {
+    // Load sessions on mount and when sidebar opens
+    if (isOpen) {
+      setSessions(getStoredSessions());
+    }
+  }, [isOpen]);
+
+  // Group sessions dynamically
+  const todayChats = sessions.filter((chat) => getRelativeDateString(chat.date) === 'today');
+  const yesterdayChats = sessions.filter((chat) => getRelativeDateString(chat.date) === 'yesterday');
+  const olderChats = sessions.filter((chat) => !['today', 'yesterday'].includes(getRelativeDateString(chat.date)));
 
   // Helper to render soft icons based on chat type
   const renderIcon = (type: string, isActive: boolean) => {
@@ -70,7 +73,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, activeChatId 
           </div>
 
           {/* Executive New Request Button */}
-          <button className="group flex items-center justify-between w-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-all duration-300 py-3.5 px-5 rounded-[1.25rem] shadow-sm">
+          <button 
+            onClick={() => onSelectChat(null as any)}
+            className="group flex items-center justify-between w-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-all duration-300 py-3.5 px-5 rounded-[1.25rem] shadow-sm"
+          >
             <span className="text-amber-500 text-[15px] font-medium tracking-wide">New Request</span>
             <div className="p-1 rounded-full bg-amber-500/20 text-amber-500 group-hover:rotate-90 transition-transform duration-300">
               <Plus size={16} strokeWidth={2.5} />
@@ -110,6 +116,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, activeChatId 
                     chat={chat} 
                     isActive={chat.id === activeChatId} 
                     icon={renderIcon(chat.icon, chat.id === activeChatId)} 
+                    onClick={() => onSelectChat(chat.id)}
                   />
                 ))}
               </div>
@@ -128,6 +135,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, activeChatId 
                     chat={chat} 
                     isActive={chat.id === activeChatId}
                     icon={renderIcon(chat.icon, chat.id === activeChatId)} 
+                    onClick={() => onSelectChat(chat.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {olderChats.length > 0 && (
+            <div>
+              <h3 className="text-[10px] font-medium text-zinc-500 mb-3 px-4 uppercase tracking-widest">
+                Older
+              </h3>
+              <div className="flex flex-col gap-1">
+                {olderChats.map((chat) => (
+                  <HistoryItem 
+                    key={chat.id} 
+                    chat={chat} 
+                    isActive={chat.id === activeChatId}
+                    icon={renderIcon(chat.icon, chat.id === activeChatId)} 
+                    onClick={() => onSelectChat(chat.id)}
                   />
                 ))}
               </div>
@@ -164,9 +191,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, activeChatId 
 };
 
 // --- History Item Sub-Component ---
-const HistoryItem: React.FC<{ chat: ChatSession, isActive?: boolean, icon: React.ReactNode }> = ({ chat, isActive, icon }) => {
+const HistoryItem: React.FC<{ chat: ChatSession, isActive?: boolean, icon: React.ReactNode, onClick: () => void }> = ({ chat, isActive, icon, onClick }) => {
   return (
     <button 
+      onClick={onClick}
       className={`relative flex items-center gap-3.5 w-full text-left py-2.5 px-4 rounded-[1rem] transition-all duration-300 group ${
         isActive 
           ? 'bg-amber-500/[0.08] text-amber-50' 

@@ -6,13 +6,16 @@ import { ChatInput } from './ChatInput';
 import { ChatMessage, ChatMessageData } from './ChatMessage';
 import { ParticleOrb } from './ParticleOrb';
 import { UserButton } from '@clerk/nextjs';
+import { saveSession, generateSessionTitle } from './historyManager';
 
 interface MainChatAreaProps {
   onOpenSidebar: () => void;
   onOpenVoiceMode: () => void;
+  activeThreadId: string | null;
+  setActiveThreadId: (id: string) => void;
 }
 
-export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpenVoiceMode }) => {
+export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpenVoiceMode, activeThreadId, setActiveThreadId }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<ChatMessageData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -24,6 +27,30 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Load history when activeThreadId changes
+  useEffect(() => {
+    if (!activeThreadId) {
+      setMessages([]);
+      return;
+    }
+    
+    setIsLoading(true);
+    fetch(`http://localhost:8000/api/v1/voice/history/${activeThreadId}`)
+      .then(res => res.json())
+      .then(data => {
+        const history = data.chat_history || [];
+        const loadedMessages: ChatMessageData[] = history.map((msg: any, i: number) => ({
+          id: `hist-${i}`,
+          role: msg.role === 'human' || msg.role === 'user' ? 'user' : 'ai',
+          content: msg.content,
+          timestamp: '', // history from langchain doesn't have exact time easily
+        }));
+        setMessages(loadedMessages);
+      })
+      .catch(err => console.error("Failed to load history:", err))
+      .finally(() => setIsLoading(false));
+  }, [activeThreadId]);
 
   const handleSendMessage = useCallback((userMessage: string, response: any) => {
     if (response === null) {
@@ -42,6 +69,17 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
     // Second call: response arrived from the backend
     setIsLoading(false);
     
+    // If it's a new thread, save it
+    if (!activeThreadId && response.thread_id) {
+      setActiveThreadId(response.thread_id);
+      saveSession({
+        id: response.thread_id,
+        title: generateSessionTitle(userMessage),
+        date: new Date().toISOString(),
+        icon: 'sparkle'
+      });
+    }
+
     const aiMsg: ChatMessageData = {
       id: `ai-${Date.now()}`,
       role: 'ai',
@@ -53,7 +91,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
       })),
     };
     setMessages(prev => [...prev, aiMsg]);
-  }, []);
+  }, [activeThreadId, setActiveThreadId]);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-transparent relative overflow-hidden">
@@ -159,6 +197,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
             onVoiceClick={onOpenVoiceMode} 
             onSendMessage={handleSendMessage}
             isLoading={isLoading}
+            activeThreadId={activeThreadId}
           />
         </div>
       </div>
