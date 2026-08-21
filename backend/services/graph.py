@@ -41,8 +41,16 @@ def intent_validator_node(state: GraphState):
 
 def intent_routing_node(state: GraphState):
     """Checks if query is malicious, off-topic, or just casual conversation."""
+    
+    history_str = ""
+    if state.get("chat_history"):
+        # Only take the last 4 messages to avoid blowing up context for routing
+        recent = state["chat_history"][-4:]
+        history_str = "Recent Chat History:\n" + "\n".join([f"{msg['role']}: {msg['content']}" for msg in recent]) + "\n\n"
+
     prompt = PromptTemplate.from_template(
         "You are an intent router for a conversational AI.\n"
+        "{history}"
         "User Query: '{query}'\n\n"
         "Classify the query into one of these categories:\n"
         "1. NOT_DIRECTED_TO_ASSISTANT: if the user is clearly talking to someone else in the room and not the AI.\n"
@@ -50,13 +58,16 @@ def intent_routing_node(state: GraphState):
         "3. COMMAND: if the user is giving an instruction to the AI itself (e.g., 'shut up', 'stop', 'wait', 'pause').\n"
         "4. CASUAL_CONVERSATION: if it is small talk, greetings ('hey', 'hello', 'what's up', 'how are you', 'hi jarvis'), or general knowledge that does NOT require searching a specific database.\n"
         "5. RAG_QUERY: if it requires searching the knowledge base (e.g., asking about specific policies, documents, or technical facts).\n\n"
-        "If the category is CASUAL_CONVERSATION, you MUST also provide a conversational answer to the query in the exact same language as the user. This bypasses retrieval for ultra-fast response.\n"
+        "If the category is CASUAL_CONVERSATION, you MUST also provide a conversational answer to the query in the exact same language as the user. This bypasses retrieval for ultra-fast response. Use the chat history to maintain context if they are continuing a previous thought.\n"
         "If the category is COMMAND, you MUST provide a very short acknowledgement (e.g., 'Okay', 'Stopping').\n"
         "Output your response strictly as a JSON object with keys 'intent' (string) and 'answer' (string, empty if not CASUAL/COMMAND)."
     )
     
     fast_llm_json = ChatOpenAI(model="gpt-4o-mini", temperature=0, model_kwargs={"response_format": {"type": "json_object"}})
-    result = (prompt | fast_llm_json).invoke({"query": state["cleaned_query"]}).content
+    result = (prompt | fast_llm_json).invoke({
+        "query": state["cleaned_query"],
+        "history": history_str
+    }).content
     
     try:
         data = json.loads(result)
@@ -81,7 +92,6 @@ def intent_routing_node(state: GraphState):
         ]
         return {"status": "fast_reply", "final_answer": answer, "chat_history": new_history, "citations": []}
     
-
     return {"status": "processing"}
 
 def retrieve_node(state: GraphState):
@@ -110,13 +120,15 @@ def generate_node(state: GraphState):
         history_str = "Chat History:\n" + "\n".join([f"{msg['role']}: {msg['content']}" for msg in state["chat_history"]]) + "\n\n"
 
     prompt = PromptTemplate.from_template(
-        "You are Jarvis, a helpful AI assistant. You have access to a database of context, but you are also highly knowledgeable in general topics.\n\n"
+        "You are JARVIS, an advanced, highly intelligent AI assistant. "
+        "You have perfect memory of our conversation history and you seamlessly use it to understand context. "
+        "You always give sharp, accurate, and direct answers without unnecessary filler.\n\n"
         "{history}"
         "Context:\n{context}\n\n"
         "Question: {query}\n\n"
         "Instructions:\n"
         "1. If the context contains the answer, use it and include citations like [doc_id].\n"
-        "2. If the context is completely irrelevant to the question (like basic math or greetings), IGNORE the context entirely and just answer the question naturally.\n"
+        "2. If the context is completely irrelevant to the question, IGNORE the context entirely and just answer the question naturally using your general knowledge and the chat history.\n"
         "3. CRITICAL: You MUST respond in the EXACT SAME LANGUAGE as the user's Question. If the user asks in Hindi, answer in Hindi.\n"
         "Answer:"
     )

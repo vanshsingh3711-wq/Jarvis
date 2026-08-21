@@ -74,6 +74,7 @@ export const JarvisAppShell: React.FC = () => {
           onOpenVoiceMode={() => setIsVoiceMode(true)}
           activeThreadId={activeThreadId}
           setActiveThreadId={setActiveThreadId}
+          isVoiceMode={isVoiceMode}
         />
       </div>
 

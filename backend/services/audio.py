@@ -4,7 +4,7 @@ import requests
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
 
-ELEVENLABS_VOICE_ID = "jGf6Nvwr7qkFPrcLThmD"
+ELEVENLABS_VOICE_ID = "cgSgspJ2msm6clMCkdW9"
 
 def text_to_speech(text: str) -> bytes | None:
     """

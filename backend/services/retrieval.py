@@ -37,7 +37,7 @@ class RetrievalService:
             return []
 
         # 1. Dense Retrieval (Chroma)
-        dense_results = self.vectorstore.similarity_search_with_relevance_scores(query, k=top_k)
+        dense_results = self.vectorstore.similarity_search_with_score(query, k=top_k)
         
         # 2. Sparse Retrieval (BM25)
         tokenized_query = query.split(" ")
