@@ -2,7 +2,6 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Menu, ShoppingBag, Map, GraduationCap, Phone, Sparkles } from 'lucide-react';
-import { useAuth } from '@/hooks/useAuth';
 import { authClient } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { ChatInput } from './ChatInput';
