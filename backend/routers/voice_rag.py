@@ -1,7 +1,7 @@
 import time
 import uuid
 from fastapi import APIRouter, UploadFile, File, Form, Request, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import asyncio
@@ -40,12 +40,11 @@ async def websocket_stream(websocket: WebSocket):
         print("[VOICE] session closed")
         return
 
-    # Use the ElevenLabs Realtime STT model
-    # Pass configuration parameters directly in the query string (LiveKit style)
-    url = f"wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&audio_format=pcm_16000&language_code=en"
+    # Use the ElevenLabs Realtime STT model with VAD for automatic end-of-speech detection
+    url = f"wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&audio_format=pcm_16000&language_code=hin"
     
     try:
-        print("[VOICE] STT connecting")
+        print(f"[VOICE] STT connecting to {url}")
         # Connect to ElevenLabs via websockets using xi-api-key header
         async with websockets.connect(
             url, 
@@ -165,6 +164,8 @@ async def process_voice_query(
     trace = request.state.trace
     t0 = time.time()
     
+    print(f"[BACKEND - /query] Received request. text_query: '{text_query}', audio_file present: {bool(audio_file)}, thread_id: {thread_id}")
+
     if audio_file:
         audio_bytes = await audio_file.read()
         transcript, confidence = audio.transcribe_audio(audio_bytes)
@@ -172,8 +173,10 @@ async def process_voice_query(
         transcript = text_query
         confidence = 1.0
     else:
+        print("[BACKEND - /query] Error: No audio_file or text_query provided")
         raise HTTPException(status_code=400, detail="Must provide audio_file or text_query")
         
+    print(f"[BACKEND - /query] Extracted transcript: '{transcript}' with confidence {confidence}")
     trace["stages"]["stt"] = round((time.time() - t0) * 1000, 2)
 
     # Initialize Graph State
@@ -188,10 +191,13 @@ async def process_voice_query(
     }
 
     t0 = time.time()
+    print(f"[BACKEND - /query] Starting LangGraph execution for thread {active_thread_id}")
     # Run the graph until completion or until it hits an interrupt (Human-in-the-Loop)
     for event in rag_app.stream(initial_state, config=config, stream_mode="values"):
         current_state = event
+        print(f"[BACKEND - /query] Graph emitted state update, current status: {current_state.get('status')}")
         
+    print(f"[BACKEND - /query] Graph execution finished in {round((time.time() - t0) * 1000, 2)}ms")
     trace["stages"]["graph_execution"] = round((time.time() - t0) * 1000, 2)
 
     # Check if the graph paused for Human Validation
@@ -260,18 +266,42 @@ async def text_to_speech_endpoint(body: TTSRequest):
     Returns audio/mpeg bytes.
     """
     if not body.text.strip():
+        print("[BACKEND - /tts] Error: Empty text provided")
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
     
+    print(f"[BACKEND - /tts] Generating TTS for text: '{body.text[:50]}...'")
     audio_bytes = audio.text_to_speech(body.text)
     
     if audio_bytes is None:
+        print("[BACKEND - /tts] TTS generation returned None, returning 204")
         # TTS unavailable — frontend will fall back to browser speechSynthesis
         return Response(status_code=204)
     
+    print(f"[BACKEND - /tts] TTS generation successful, returning {len(audio_bytes)} bytes")
     return Response(
         content=audio_bytes,
         media_type="audio/mpeg",
         headers={"Content-Disposition": "inline; filename=jarvis_speech.mp3"}
+    )
+
+@router.get("/tts")
+async def text_to_speech_get_endpoint(text: str):
+    """
+    Streams text to speech using ElevenLabs TTS for lower latency playback on the client.
+    """
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty.")
+        
+    print(f"[BACKEND - GET /tts] Generating stream TTS for text: '{text[:50]}...'")
+    audio_stream = audio.text_to_speech_stream(text)
+    
+    if audio_stream is None:
+        print("[BACKEND - GET /tts] TTS stream unavailable, returning 204")
+        return Response(status_code=204)
+        
+    return StreamingResponse(
+        audio_stream, 
+        media_type="audio/mpeg"
     )
 
 @router.get("/history/{thread_id}")
@@ -282,9 +312,12 @@ async def get_thread_history(thread_id: str):
     config = {"configurable": {"thread_id": thread_id}}
     snapshot = rag_app.get_state(config)
     
+    
     # If the thread doesn't exist, return empty
     if not snapshot or not snapshot.values:
+        print(f"[BACKEND - /history] No history found for thread {thread_id}")
         return {"chat_history": []}
         
     chat_history = snapshot.values.get("chat_history", [])
+    print(f"[BACKEND - /history] Returning {len(chat_history)} history messages for thread {thread_id}")
     return {"chat_history": chat_history}

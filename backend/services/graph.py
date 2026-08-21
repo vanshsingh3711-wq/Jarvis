@@ -22,14 +22,21 @@ class GraphState(TypedDict):
     hallucination_retries: int
     chat_history: Annotated[List[Dict[str, str]], operator.add]
 
-llm = ChatOpenAI(model="gpt-4o", temperature=0)
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 fast_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 # --- Nodes ---
 
 def clean_disfluencies_node(state: GraphState):
-    """Normalizes Hinglish and disfluencies"""
-    cleaned = audio.clean_disfluencies(state["raw_transcript"], state.get("chat_history", []))
+    """Normalizes Hinglish and disfluencies — skips LLM for clean transcripts"""
+    raw = state["raw_transcript"].strip()
+    # Skip expensive LLM call for short clean transcripts
+    filler_words = {"umm", "uh", "um", "like", "you know", "so like", "basically"}
+    words = raw.lower().split()
+    has_fillers = any(f in raw.lower() for f in filler_words)
+    if len(words) <= 15 and not has_fillers:
+        return {"cleaned_query": raw}
+    cleaned = audio.clean_disfluencies(raw, state.get("chat_history", []))
     return {"cleaned_query": cleaned}
 
 def intent_validator_node(state: GraphState):

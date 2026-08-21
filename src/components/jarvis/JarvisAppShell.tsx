@@ -16,6 +16,18 @@ export const JarvisAppShell: React.FC = () => {
     setIsMounted(true);
   }, []);
 
+  // Global keydown listener for intuitive UX
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isVoiceMode) setIsVoiceMode(false);
+        if (isSidebarOpen) setIsSidebarOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isVoiceMode, isSidebarOpen]);
+
   return (
     <div className="relative flex h-screen w-full bg-[#050505] text-zinc-100 overflow-hidden font-sans selection:bg-amber-500/30 selection:text-amber-50">
       
@@ -52,7 +64,7 @@ export const JarvisAppShell: React.FC = () => {
         This is the secret to making it feel like physical glass.
       */}
       <div 
-        className={`relative z-10 flex h-full w-full transform origin-center transition-all duration-[800ms] cubic-bezier(0.2, 0.8, 0.2, 1) overflow-hidden ${
+        className={`relative z-10 flex h-full w-full transform origin-center transition-all duration-[800ms] ease-[cubic-bezier(0.2,0.8,0.2,1)] overflow-hidden ${
           !isMounted ? 'opacity-0 translate-y-4' : 'opacity-100 translate-y-0'
         } ${
           isVoiceMode 
@@ -63,7 +75,7 @@ export const JarvisAppShell: React.FC = () => {
         <Sidebar 
           isOpen={isSidebarOpen} 
           onClose={() => setIsSidebarOpen(false)} 
-          activeChatId={activeThreadId || undefined}
+          activeChatId={activeThreadId}
           onSelectChat={(id) => {
             setActiveThreadId(id);
             setIsSidebarOpen(false);
@@ -81,7 +93,7 @@ export const JarvisAppShell: React.FC = () => {
       {/* --- Voice Mode Overlay --- */}
       {/* Heavy frosted glass that steps into the foreground */}
       <div 
-        className={`absolute inset-0 z-50 flex items-center justify-center transition-all duration-[800ms] cubic-bezier(0.2, 0.8, 0.2, 1) ${
+        className={`absolute inset-0 z-50 flex items-center justify-center transition-all duration-[800ms] ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
           isVoiceMode 
             ? 'opacity-100 pointer-events-auto backdrop-blur-2xl bg-black/20' 
             : 'opacity-0 pointer-events-none backdrop-blur-none bg-black/0'

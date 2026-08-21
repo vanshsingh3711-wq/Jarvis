@@ -41,6 +41,43 @@ def text_to_speech(text: str) -> bytes | None:
         print(f"Error calling ElevenLabs TTS API: {e}")
         return None
 
+def text_to_speech_stream(text: str):
+    """
+    Calls ElevenLabs TTS API to stream text to speech.
+    Returns a generator yielding audio bytes.
+    """
+    api_key = os.getenv("ELEVENLABS_API_KEY")
+    if not api_key:
+        print("Warning: No ElevenLabs API key found, skipping TTS.")
+        return None
+
+    # Use the /stream endpoint for chunked streaming with lowest-latency settings
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}/stream?optimize_streaming_latency=4"
+    headers = {
+        "xi-api-key": api_key,
+        "Content-Type": "application/json",
+        "Accept": "audio/mpeg"
+    }
+    body = {
+        "text": text,
+        "model_id": "eleven_turbo_v2_5",
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.75,
+            "style": 0.0,
+            "use_speaker_boost": False
+        }
+    }
+
+    try:
+        response = requests.post(url, json=body, headers=headers, stream=True, timeout=30)
+        response.raise_for_status()
+        return response.iter_content(chunk_size=1024)
+    except Exception as e:
+        print(f"Error calling ElevenLabs TTS API stream: {e}")
+        return None
+
+
 def transcribe_audio(audio_bytes: bytes) -> tuple[str, float]:
     """
     Calls OpenAI Whisper STT API to transcribe audio.

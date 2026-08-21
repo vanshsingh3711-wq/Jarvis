@@ -36,12 +36,14 @@ export const saveSession = (session: ChatSession) => {
   }
   
   localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+  window.dispatchEvent(new Event('sessionsUpdated'));
 };
 
 export const deleteSession = (id: string) => {
   if (typeof window === 'undefined') return;
   const sessions = getStoredSessions().filter(s => s.id !== id);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+  window.dispatchEvent(new Event('sessionsUpdated'));
 };
 
 // Helper for generating short titles based on user query
