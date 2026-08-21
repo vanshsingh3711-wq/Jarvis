@@ -3,9 +3,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Search, Settings, Plus, MoreHorizontal, 
-  Sparkles, AlignLeft, Calendar, Briefcase
+  Sparkles, AlignLeft, Calendar, Briefcase, Trash2
 } from 'lucide-react';
-import { getStoredSessions, ChatSession, getRelativeDateString } from './historyManager';
+import { getStoredSessions, ChatSession, getRelativeDateString, deleteSession } from './historyManager';
 import { createClient } from '@/utils/supabase/client';
 
 interface SidebarProps {
@@ -181,6 +181,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, activeChatId,
                     isActive={chat.id === activeChatId} 
                     icon={renderIcon(chat.icon, chat.id === activeChatId)} 
                     onClick={() => handleSelectChat(chat.id)}
+                    onDelete={() => {
+                      deleteSession(chat.id);
+                      if (chat.id === activeChatId) onSelectChat(null);
+                    }}
                   />
                 ))}
               </div>
@@ -200,6 +204,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, activeChatId,
                     isActive={chat.id === activeChatId}
                     icon={renderIcon(chat.icon, chat.id === activeChatId)} 
                     onClick={() => handleSelectChat(chat.id)}
+                    onDelete={() => {
+                      deleteSession(chat.id);
+                      if (chat.id === activeChatId) onSelectChat(null);
+                    }}
                   />
                 ))}
               </div>
@@ -219,6 +227,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, activeChatId,
                     isActive={chat.id === activeChatId}
                     icon={renderIcon(chat.icon, chat.id === activeChatId)} 
                     onClick={() => handleSelectChat(chat.id)}
+                    onDelete={() => {
+                      deleteSession(chat.id);
+                      if (chat.id === activeChatId) onSelectChat(null);
+                    }}
                   />
                 ))}
               </div>
@@ -255,31 +267,42 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, activeChatId,
 };
 
 // --- History Item Sub-Component ---
-const HistoryItem: React.FC<{ chat: ChatSession, isActive?: boolean, icon: React.ReactNode, onClick: () => void }> = ({ chat, isActive, icon, onClick }) => {
+const HistoryItem: React.FC<{ chat: ChatSession, isActive?: boolean, icon: React.ReactNode, onClick: () => void, onDelete: () => void }> = ({ chat, isActive, icon, onClick, onDelete }) => {
   return (
-    <button 
-      onClick={onClick}
-      className={`relative flex items-center gap-3.5 w-full text-left py-2.5 px-4 rounded-[1rem] transition-all duration-300 group ${
+    <div className={`relative flex items-center w-full group rounded-[1rem] transition-all duration-300 ${
         isActive 
-          ? 'bg-amber-500/[0.08] text-amber-50' 
-          : 'hover:bg-white/[0.03] text-zinc-400 hover:text-zinc-200'
-      }`}
-    >
-      {/* Soft Active Indicator */}
-      {isActive && (
-        <div className="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-1/2 bg-amber-500 rounded-full opacity-80" />
-      )}
-      
-      {icon}
-      
-      <span className="text-[14px] truncate pr-6 font-light tracking-wide">{chat.title}</span>
-      
-      {/* Options Icon (Shows on hover) */}
-      <div className={`absolute right-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${
-        isActive ? 'opacity-100' : ''
-      }`}>
-        <MoreHorizontal size={16} strokeWidth={1.5} className="text-zinc-500 hover:text-white transition-colors" />
-      </div>
-    </button>
+          ? 'bg-amber-500/[0.08]' 
+          : 'hover:bg-white/[0.03]'
+    }`}>
+      <button 
+        onClick={onClick}
+        className={`flex-1 flex items-center gap-3.5 text-left py-2.5 pl-4 pr-10 rounded-[1rem] ${
+          isActive 
+            ? 'text-amber-50' 
+            : 'text-zinc-400 hover:text-zinc-200'
+        }`}
+      >
+        {/* Soft Active Indicator */}
+        {isActive && (
+          <div className="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-1/2 bg-amber-500 rounded-full opacity-80" />
+        )}
+        
+        {icon}
+        
+        <span className="text-[14px] truncate font-light tracking-wide">{chat.title}</span>
+      </button>
+
+      {/* Delete Icon (Shows on hover) */}
+      <button 
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
+        className="absolute right-3 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 text-zinc-500 hover:text-red-400 hover:bg-white/5 rounded-md"
+        title="Delete chat"
+      >
+        <Trash2 size={14} strokeWidth={2} />
+      </button>
+    </div>
   );
 };

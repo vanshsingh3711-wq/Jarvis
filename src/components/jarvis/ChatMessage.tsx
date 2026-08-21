@@ -37,84 +37,71 @@ export const ChatMessage: React.FC<ChatMessageProps> = React.memo(({
   }, [message.content]);
 
   return (
-    <div 
-      className={`group relative py-5 flex gap-4 md:gap-5 px-4 md:px-8 transition-all duration-300 ${
-        isUser 
-          ? 'hover:bg-white/[0.01]' 
-          : 'bg-white/[0.02] backdrop-blur-xl rounded-3xl my-2 mx-2 md:mx-4 border border-white/[0.03] shadow-sm'
-      }`}
-    >
-      {/* Avatar Column */}
-      <div className="shrink-0 pt-0.5">
-        {isUser ? (
-          <div className="relative flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-b from-zinc-800 to-zinc-900 border border-white/5 shadow-inner">
-            <User size={18} className="text-zinc-400" strokeWidth={1.5} aria-hidden="true" />
-          </div>
-        ) : (
-          <div className="relative flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-amber-500/20 to-amber-900/20 border border-amber-500/20 shadow-[0_4px_20px_rgba(245,158,11,0.1)]">
-            <Sparkles size={20} className="text-amber-500" strokeWidth={1.5} aria-hidden="true" />
-          </div>
-        )}
+    <div className={`flex flex-col w-full py-3 animate-in fade-in duration-500 ${isUser ? 'items-end pr-4 md:pr-8' : 'items-start pl-4 md:pl-8'}`}>
+      
+      {/* Sender Header */}
+      <div className={`flex items-center gap-2 mb-1.5 ${isUser ? 'flex-row-reverse mr-2' : 'ml-2'}`}>
+        <div className={`flex items-center justify-center w-6 h-6 rounded-full shadow-sm ${
+          isUser 
+            ? 'bg-zinc-800 border border-white/5' 
+            : 'bg-amber-500/20 border border-amber-500/20'
+        }`}>
+          {isUser ? <User size={12} className="text-zinc-400" /> : <Sparkles size={12} className="text-amber-500" />}
+        </div>
+        <span className={`text-[12px] font-medium tracking-wide ${isUser ? 'text-zinc-400' : 'text-amber-500/90'}`}>
+          {isUser ? userName : aiName}
+        </span>
+        <span className="text-[10px] text-zinc-600 font-light tracking-wider ml-1">
+          {message.timestamp}
+        </span>
       </div>
 
-      {/* Content Column */}
-      <div className="flex-1 min-w-0 flex flex-col gap-1.5 py-1">
-        
-        {/* Header (Name, Timestamp, Actions) */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-baseline gap-3">
-            <span className={`text-[15px] font-medium tracking-wide ${isUser ? 'text-zinc-200' : 'text-amber-500/90'}`}>
-              {isUser ? userName : aiName}
-            </span>
-            <span className="text-[11px] text-zinc-500 font-light tracking-wider">
-              {message.timestamp}
-            </span>
-          </div>
-
+      {/* Bubble Content */}
+      <div className="group relative flex flex-col max-w-[90%] md:max-w-[75%]">
+        <div className={`px-5 py-3.5 rounded-[1.5rem] shadow-sm relative ${
+          isUser 
+            ? 'bg-amber-500/[0.08] border border-amber-500/20 text-zinc-100 rounded-br-sm' 
+            : 'bg-white/[0.04] border border-white/[0.06] text-zinc-200 backdrop-blur-2xl rounded-bl-sm'
+        }`}>
+          
           {/* Copy Button (Only on AI messages, fades in on hover) */}
           {!isUser && (
             <button 
               onClick={handleCopy}
               aria-label={copied ? "Copied to clipboard" : "Copy to clipboard"}
-              className="opacity-0 group-hover:opacity-100 transition-all duration-200 p-2 rounded-full hover:bg-white/10 text-zinc-400 hover:text-zinc-100 focus:outline-none"
+              className="absolute -right-10 top-2 opacity-0 group-hover:opacity-100 transition-all duration-200 p-2 rounded-full hover:bg-white/10 text-zinc-400 hover:text-zinc-100 focus:outline-none"
               title="Copy to clipboard"
             >
               {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
             </button>
           )}
-        </div>
 
-        {/* Message Body */}
-        {/* Note: If your AI returns Markdown, consider replacing this div with a package like 'react-markdown' */}
-        <div className="text-zinc-300 text-[15px] leading-[1.75] whitespace-pre-wrap font-light tracking-wide mt-0.5">
-          {message.content}
+          <div className="text-[15px] leading-[1.75] whitespace-pre-wrap font-light tracking-wide">
+            {message.content}
+          </div>
         </div>
 
         {/* Citations / Sources */}
-        {message.sources && message.sources.length > 0 && (
-          <div className="mt-4 flex flex-col gap-2.5">
-            <div className="text-[10px] text-zinc-500 font-medium uppercase tracking-widest pl-1">
-              References
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {message.sources.map((source) => (
-                <a
-                  key={source.id}
-                  href={source.url || '#'}
-                  target={source.url ? "_blank" : undefined}
-                  rel={source.url ? "noopener noreferrer" : undefined}
-                  className="group/source inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/30 backdrop-blur-sm border border-white/5 text-xs text-zinc-400 hover:text-zinc-100 hover:bg-white/10 hover:border-white/10 transition-all duration-300"
-                >
-                  <FileText size={12} className="text-amber-500/70 group-hover/source:text-amber-400 transition-colors" strokeWidth={2} aria-hidden="true" />
-                  <span className="truncate max-w-[200px] font-light">
-                    {source.title}
-                  </span>
-                </a>
-              ))}
-            </div>
+        {!isUser && message.sources && message.sources.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2 ml-2">
+            {message.sources.map((source) => (
+              <a
+                key={source.id}
+                href={source.url || '#'}
+                target={source.url ? "_blank" : undefined}
+                rel={source.url ? "noopener noreferrer" : undefined}
+                className="group/source inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/30 backdrop-blur-sm border border-white/5 text-[11px] text-zinc-400 hover:text-zinc-100 hover:bg-white/10 hover:border-white/10 transition-all duration-300"
+              >
+                <FileText size={10} className="text-amber-500/70 group-hover/source:text-amber-400 transition-colors" strokeWidth={2} aria-hidden="true" />
+                <span className="truncate max-w-[150px] font-light">
+                  {source.title}
+                </span>
+              </a>
+            ))}
           </div>
         )}
       </div>
+
     </div>
   );
 });

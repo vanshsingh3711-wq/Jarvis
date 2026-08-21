@@ -41,7 +41,7 @@ async def websocket_stream(websocket: WebSocket):
         return
 
     # Use the ElevenLabs Realtime STT model with VAD for automatic end-of-speech detection
-    url = f"wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&audio_format=pcm_16000&language_code=hin"
+    url = f"wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&audio_format=pcm_16000"
     
     try:
         print(f"[VOICE] STT connecting to {url}")

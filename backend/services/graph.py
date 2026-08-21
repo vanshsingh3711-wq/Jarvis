@@ -136,7 +136,7 @@ def generate_node(state: GraphState):
         "Instructions:\n"
         "1. If the context contains the answer, use it and include citations like [doc_id].\n"
         "2. If the context is completely irrelevant to the question, IGNORE the context entirely and just answer the question naturally using your general knowledge and the chat history.\n"
-        "3. CRITICAL: You MUST respond in the EXACT SAME LANGUAGE as the user's Question. If the user asks in Hindi, answer in Hindi.\n"
+        "3. CRITICAL LANGUAGE RULE: You MUST constantly adapt to the user's language. If the user speaks in Hindi, you MUST reply in Hindi. If they speak English, reply in English. If they mix (Hinglish), reply in the same style. ALWAYS mirror the language of the Question.\n"
         "Answer:"
     )
     
