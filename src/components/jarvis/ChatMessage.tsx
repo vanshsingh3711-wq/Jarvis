@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { User, Sparkles, FileText, Copy, Check } from 'lucide-react';
+import { authClient } from '@/lib/auth-client';
 // import { ChatMessageData } from './MockData';
 
 // --- MOCK DATA (Remove this in your actual code) ---
@@ -20,6 +21,8 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
   const isUser = message.role === 'user';
   // Accept both 'ai' and 'assistant' as AI roles for compatibility
   const [copied, setCopied] = useState(false);
+  const { data: session } = authClient.useSession();
+  const userName = session?.user?.name?.split(' ')[0] || 'User';
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content);
@@ -54,7 +57,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-baseline gap-3">
             <span className={`text-[15px] font-medium tracking-wide ${isUser ? 'text-zinc-200' : 'text-amber-500/90'}`}>
-              {isUser ? 'Vansh' : 'JARVIS'}
+              {isUser ? userName : 'JARVIS'}
             </span>
             <span className="text-[11px] text-zinc-500 font-light tracking-wider">{message.timestamp}</span>
           </div>

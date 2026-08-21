@@ -22,6 +22,16 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
   const [messages, setMessages] = useState<ChatMessageData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
+  const { data: session } = authClient.useSession();
+  const userName = session?.user?.name?.split(' ')[0] || 'User';
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -155,7 +165,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
 
             <div className="text-center space-y-3 mb-10">
               <h2 className="text-3xl md:text-4xl font-light text-zinc-100 tracking-wide">
-                Good morning, <span className="font-medium bg-clip-text text-transparent bg-gradient-to-r from-amber-200 to-amber-500">Vansh</span>.
+                {getGreeting()}, <span className="font-medium bg-clip-text text-transparent bg-gradient-to-r from-amber-200 to-amber-500">{userName}</span>.
               </h2>
               <p className="text-sm text-zinc-500 font-light tracking-wide max-w-md mx-auto">
                 All systems initialized. What would you like to focus on today?
