@@ -41,12 +41,16 @@ async def websocket_stream(websocket: WebSocket):
         return
 
     # Use the ElevenLabs Realtime STT model
-    url = "wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime"
+    # Pass configuration parameters directly in the query string (LiveKit style)
+    url = f"wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&audio_format=pcm_16000&language_code=en"
     
     try:
         print("[VOICE] STT connecting")
-        # Connect to ElevenLabs via websockets using xi-api-key for authentication
-        async with websockets.connect(url, additional_headers={"xi-api-key": api_key}) as eleven_ws:
+        # Connect to ElevenLabs via websockets using xi-api-key header
+        async with websockets.connect(
+            url, 
+            additional_headers={"xi-api-key": api_key}
+        ) as eleven_ws:
             print("[VOICE] STT connected")
             
             async def receive_from_frontend():
@@ -63,50 +67,62 @@ async def websocket_stream(websocket: WebSocket):
                         if "bytes" in data:
                             bytes_len = len(data["bytes"])
                             sample_count = bytes_len // 2
-                            print(f"[VOICE] audio received: {bytes_len} bytes")
-                            print(f"[VOICE] PCM16 decode: {sample_count} samples. Format: PCM16 16000Hz mono.")
+                            print(f"[VOICE][DEBUG] audio received from frontend: {bytes_len} bytes")
                             b64_audio = base64.b64encode(data["bytes"]).decode('utf-8')
-                            await eleven_ws.send(json.dumps({
-                                "message_type": "input_audio_chunk",
-                                "audio_base_64": b64_audio
-                            }))
+                            try:
+                                await eleven_ws.send(json.dumps({
+                                    "message_type": "input_audio_chunk",
+                                    "audio_base_64": b64_audio
+                                }))
+                                print(f"[VOICE][DEBUG] Sent audio_chunk to ElevenLabs ({len(b64_audio)} chars b64)")
+                            except Exception as e:
+                                print(f"[VOICE][ERROR] Failed to send audio to ElevenLabs: {e}")
                         elif "text" in data:
                             try:
                                 msg = json.loads(data["text"])
                                 if msg.get("type") == "speech_end":
-                                    await eleven_ws.send(json.dumps({"type": "speech_end"}))
+                                    await eleven_ws.send(json.dumps({
+                                        "message_type": "input_audio_chunk",
+                                        "audio_base_64": "",
+                                        "commit": True
+                                    }))
+                                    print("[VOICE][DEBUG] Sent commit to ElevenLabs")
                                 else:
                                     await eleven_ws.send(data["text"])
+                                    print(f"[VOICE][DEBUG] Sent text message to ElevenLabs: {data['text']}")
                             except json.JSONDecodeError:
                                 await eleven_ws.send(json.dumps({"user_audio_chunk": data["text"]}))
+                                print("[VOICE][DEBUG] Sent raw text as user_audio_chunk")
                 except WebSocketDisconnect as e:
-                    print(f"[VOICE] frontend disconnected: {e.code}")
+                    print(f"[VOICE][INFO] frontend disconnected with code: {e.code}")
                 except asyncio.CancelledError:
-                    pass
+                    print(f"[VOICE][INFO] receive_from_frontend cancelled")
                 except Exception as e:
-                    print(f"Error receiving from frontend: {e}")
+                    print(f"[VOICE][ERROR] Error receiving from frontend: {e}")
 
             async def receive_from_elevenlabs():
                 try:
+                    print("[VOICE][DEBUG] Started receive_from_elevenlabs loop")
                     async for message in eleven_ws:
+                        print(f"[VOICE][DEBUG] Received raw message from ElevenLabs: {message[:200]}...")
                         try:
                             evt = json.loads(message)
                             evt_type = evt.get("message_type") or evt.get("type") or "unknown"
-                            print(f"[VOICE] transcript event: {evt_type}")
+                            print(f"[VOICE][DEBUG] Parsed transcript event: {evt_type}")
                             if evt_type == "input_error" or evt.get("error"):
-                                print("[VOICE] ElevenLabs input error:", json.dumps(evt, indent=2))
+                                print("[VOICE][ERROR] ElevenLabs input error:", json.dumps(evt, indent=2))
                             await websocket.send_json(evt)
                         except json.JSONDecodeError:
-                            print("[VOICE] transcript event: raw text")
+                            print("[VOICE][WARN] transcript event: raw text, forwarding to frontend")
                             await websocket.send_text(message)
+                    print("[VOICE][DEBUG] ElevenLabs websocket async for loop ended cleanly")
                 except websockets.exceptions.ConnectionClosed as e:
-                    print(f"[VOICE] STT disconnected")
+                    print(f"[VOICE][INFO] STT disconnected remotely: code={e.code}, reason={e.reason}")
                 except asyncio.CancelledError:
-                    print("[VOICE] STT disconnected")
+                    print("[VOICE][INFO] receive_from_elevenlabs cancelled")
                 except Exception as e:
-                    print(f"Error receiving from ElevenLabs: {e}")
-                    print("[VOICE] STT disconnected")
-
+                    print(f"[VOICE][ERROR] Error receiving from ElevenLabs: {e}")
+                    
             # Run both tasks concurrently
             frontend_task = asyncio.create_task(receive_from_frontend())
             elevenlabs_task = asyncio.create_task(receive_from_elevenlabs())
