@@ -1,16 +1,15 @@
 import { JarvisAppShell } from "@/components/jarvis/JarvisAppShell";
-import { auth } from "@/lib/auth";
+import { createClient } from "@/utils/supabase/server";
 import { headers } from "next/headers";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const session = await auth.api.getSession({
-    headers: await headers()
-  });
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (session) {
+  if (user) {
     return <JarvisAppShell />;
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { authClient } from "@/lib/auth-client";
+import { createClient } from "@/utils/supabase/client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -13,10 +13,13 @@ export default function SignUpPage() {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { data, error } = await authClient.signUp.email({
+    const supabase = createClient();
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      name,
+      options: {
+        data: { name },
+      },
     });
     
     if (error) {

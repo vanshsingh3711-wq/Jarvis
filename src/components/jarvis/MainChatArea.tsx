@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Menu, ShoppingBag, Map, GraduationCap, Phone, Sparkles } from 'lucide-react';
-import { authClient } from '@/lib/auth-client';
+import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
 import { ChatInput } from './ChatInput';
 import { ChatMessage, ChatMessageData } from './ChatMessage';
@@ -22,8 +22,16 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
   const [messages, setMessages] = useState<ChatMessageData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  const { data: session } = authClient.useSession();
-  const userName = session?.user?.name?.split(' ')[0] || 'User';
+  const [userName, setUserName] = useState('User');
+  const supabase = createClient();
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user) {
+        setUserName(data.user.user_metadata?.name?.split(' ')[0] || data.user.email?.split('@')[0] || 'User');
+      }
+    });
+  }, [supabase]);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -136,7 +144,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
         <div className="flex items-center">
           <button 
             onClick={async () => {
-              await authClient.signOut();
+              await supabase.auth.signOut();
               window.location.href = "/sign-in";
             }}
             className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors text-sm"
@@ -184,7 +192,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
           /* Increased bottom padding (pb-40) so the last message fully clears the floating input area */
           <div className="flex flex-col pb-40 pt-6 max-w-4xl mx-auto w-full">
             {messages.map((msg) => (
-              <ChatMessage key={msg.id} message={msg} />
+              <ChatMessage key={msg.id} message={msg} userName={userName} />
             ))}
             
             {/* Loading indicator while waiting for AI response */}

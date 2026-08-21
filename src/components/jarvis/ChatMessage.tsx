@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { User, Sparkles, FileText, Copy, Check } from 'lucide-react';
-import { authClient } from '@/lib/auth-client';
 // import { ChatMessageData } from './MockData';
 
 // --- MOCK DATA (Remove this in your actual code) ---
@@ -15,14 +14,13 @@ export interface ChatMessageData {
 
 interface ChatMessageProps {
   message: ChatMessageData;
+  userName?: string;
 }
 
-export const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
+export const ChatMessage: React.FC<ChatMessageProps> = ({ message, userName = 'User' }) => {
   const isUser = message.role === 'user';
   // Accept both 'ai' and 'assistant' as AI roles for compatibility
   const [copied, setCopied] = useState(false);
-  const { data: session } = authClient.useSession();
-  const userName = session?.user?.name?.split(' ')[0] || 'User';
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content);

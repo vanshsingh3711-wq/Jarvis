@@ -1,6 +1,6 @@
 "use client";
 
-import { authClient } from "@/lib/auth-client";
+import { createClient } from "@/utils/supabase/client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -12,7 +12,8 @@ export default function SignInPage() {
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { data, error } = await authClient.signIn.email({
+    const supabase = createClient();
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
