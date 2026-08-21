@@ -2,6 +2,9 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Menu, ShoppingBag, Map, GraduationCap, Phone, Sparkles } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import { authClient } from '@/lib/auth-client';
+import { useRouter } from 'next/navigation';
 import { ChatInput } from './ChatInput';
 import { ChatMessage, ChatMessageData } from './ChatMessage';
 import { ParticleOrb } from './ParticleOrb';
@@ -120,7 +123,15 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({ onOpenSidebar, onOpe
         </div>
         
         <div className="flex items-center">
-          {/* Auth removed */}
+          <button 
+            onClick={async () => {
+              await authClient.signOut();
+              window.location.href = "/sign-in";
+            }}
+            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors text-sm"
+          >
+            Sign Out
+          </button>
         </div>
       </header>
 

@@ -12,6 +12,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+
 export const metadata: Metadata = {
   title: "JARVIS — Voice-Native RAG Assistant",
   description: "An intelligent voice-first RAG assistant with hybrid retrieval, guardrails, and human-in-the-loop validation.",
