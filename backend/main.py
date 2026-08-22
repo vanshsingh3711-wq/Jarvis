@@ -53,6 +53,10 @@ async def add_process_time_header(request: Request, call_next):
 
 app.include_router(voice_rag.router, prefix="/api/v1/voice")
 
+@app.get("/")
+def read_root():
+    return {"message": "Jarvis Backend is running! 🚀"}
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
