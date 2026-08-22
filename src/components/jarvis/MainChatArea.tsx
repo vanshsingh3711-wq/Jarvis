@@ -145,10 +145,37 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
     router.push('/sign-in');
   };
 
-  const handleQuickActionClick = (prompt: string) => {
-    // Note: To make this work seamlessly, you'll need to either lift the API fetch logic 
-    // out of ChatInput.tsx into this file, OR pass this prompt down to ChatInput to auto-submit.
+  const handleQuickActionClick = async (prompt: string) => {
     console.log("Quick action triggered with prompt:", prompt);
+    handleSendMessage(prompt, null, []);
+    
+    try {
+      const formData = new FormData();
+      formData.append('text_query', prompt);
+
+      if (activeThreadId) {
+        formData.append('thread_id', activeThreadId);
+      }
+
+      const response = await fetch(`${apiBaseUrl}/api/v1/voice/query`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`);
+      }
+
+      const data = await response.json();
+      handleSendMessage(prompt, data, []);
+    } catch (error) {
+      console.error('[FRONTEND - QuickAction] API Error:', error);
+      handleSendMessage(prompt, { 
+        status: "error", 
+        answer: "Failed to connect to the backend. Make sure the server is running.",
+        citations: [] 
+      }, []);
+    }
   };
 
   return (
