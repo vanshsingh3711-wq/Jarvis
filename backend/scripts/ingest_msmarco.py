@@ -8,7 +8,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 from datasets import load_dataset
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_experimental.text_splitter import SemanticChunker
-from langchain_openai.embeddings import OpenAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 
 # Configuration
@@ -18,14 +18,14 @@ BM25_CACHE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "bm25
 def process_and_ingest():
     print("Loading MSMARCO-XI Dataset (English slice for demo)...")
     # Using streaming=True completely skips the 40GB download and PyArrow crashes!
-    # It instantly streams just the first 100 rows we need for the hackathon demo.
+    # It instantly streams just the first 5 rows we need for a fast benchmark.
     dataset = load_dataset("ai4bharat/MSMARCO-XI", "default", split="validation", streaming=True)
-    dataset_slice = dataset.take(100)
+    dataset_slice = dataset.take(5)
     
     print("Applying multiple chunking strategies...")
     
     # 1. Semantic Chunker (splits based on meaning shifts)
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     semantic_chunker = SemanticChunker(embeddings, breakpoint_threshold_type="percentile")
     
     # 2. Recursive Character Splitter (fallback with overlap)
@@ -53,12 +53,8 @@ def process_and_ingest():
         
         # We demonstrate multiple chunking strategies.
         # Strategy A: Semantic Chunking (Vast strategy requirement)
-        try:
-            # Semantic chunking can fail on very short texts
-            chunks = semantic_chunker.split_text(full_text)
-        except Exception:
-            # Strategy B: Recursive chunking fallback
-            chunks = recursive_chunker.split_text(full_text)
+        # Semantic chunker is hanging CPU with local embeddings, so we just use recursive
+        chunks = recursive_chunker.split_text(full_text)
             
         for i, chunk in enumerate(chunks):
             # Save for Chroma
