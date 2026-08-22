@@ -120,7 +120,8 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose, activeT
   // Load history on mount if opening an existing thread
   useEffect(() => {
     if (activeThreadId && messages.length === 0) {
-      fetch(`http://localhost:8000/api/v1/voice/history/${activeThreadId}`)
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      fetch(`${apiBaseUrl}/api/v1/voice/history/${activeThreadId}`)
         .then(res => res.json())
         .then(data => {
           if (data.chat_history && data.chat_history.length > 0) {
@@ -219,7 +220,8 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose, activeT
         formData.append('thread_id', activeThreadIdRef.current);
       }
 
-      const response = await fetch('http://localhost:8000/api/v1/voice/query', {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiBaseUrl}/api/v1/voice/query`, {
         method: 'POST',
         body: formData
       });
@@ -301,7 +303,9 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose, activeT
     try {
       cleanupAudio();
       
-      const ws = new WebSocket('ws://localhost:8000/api/v1/voice/stream');
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const wsBaseUrl = apiBaseUrl.replace(/^http/, 'ws');
+      const ws = new WebSocket(`${wsBaseUrl}/api/v1/voice/stream`);
       wsRef.current = ws;
       
       const committedSegments: string[] = [];
@@ -458,7 +462,8 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose, activeT
     };
 
     try {
-      const audioUrl = `http://localhost:8000/api/v1/voice/tts?text=${encodeURIComponent(text)}`;
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const audioUrl = `${apiBaseUrl}/api/v1/voice/tts?text=${encodeURIComponent(text)}`;
       const audio = new Audio(audioUrl);
       audioPlayerRef.current = audio;
       
@@ -484,7 +489,8 @@ export const VoiceAgentMode: React.FC<VoiceAgentModeProps> = ({ onClose, activeT
     setAgentState('processing');
     
     try {
-      const response = await fetch('http://localhost:8000/api/v1/voice/resume', {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiBaseUrl}/api/v1/voice/resume`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
